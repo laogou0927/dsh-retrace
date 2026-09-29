@@ -1,0 +1,17 @@
+# Line-ending policy for files whose exact bytes matter.
+#
+# `core.autocrlf=true` is the Windows default, so without these rules a checkout
+# rewrites these files to CRLF.
+
+# The dependency patch is applied by pnpm against LF package sources. A CRLF
+# copy fails to apply ("patch does not apply"), which would silently drop the
+# v4 rules and leave the pre-write guard advisory.
+patches/*.patch text eol=lf
+
+# Generated, byte-compared artifacts. The generators emit LF on every platform
+# (scripts/generate-dynamic.mjs and scripts/build-client.mjs normalise), and CI
+# asserts the committed copies are not stale — so a CRLF checkout would make
+# `pnpm build` dirty them on Windows for no reason.
+lib/client.bundle.js text eol=lf
+lib/dynamic-host.js text eol=lf
+lib/dynamic-client.js text eol=lf
