@@ -188,7 +188,8 @@ export function scanPluginFiles(root, { dir, skip = [], re }) {
 
 
 // ---------------------------------------------------------------------------
-// Minimal asar reader (header: u32LE@12 = header size; data starts at 17 + it)
+// Minimal asar reader (header: u32LE@12 = unpadded JSON header size; the header
+// is padded to a 4-byte boundary and entry offsets are relative to it)
 // ---------------------------------------------------------------------------
 function openAsar(file) {
   const fd = openSync(file, 'r')
@@ -198,7 +199,13 @@ function openAsar(file) {
   const headerBuf = Buffer.alloc(headerSize)
   readSync(fd, headerBuf, 0, headerSize, 16)
   const tree = JSON.parse(headerBuf.toString('utf8').replace(/\0+$/, ''))
-  const dataStart = 17 + headerSize
+  // The JSON header is padded to a 4-byte boundary and entry offsets are
+  // relative to the end of that PADDING, not to the raw JSON length. Using the
+  // unpadded length (the old `17 + headerSize`) shifts every read by up to 3
+  // bytes: regex assertions still matched, so it stayed invisible, while
+  // JSON.parse of the host package.json silently failed and every version
+  // printed as "?".
+  const dataStart = 16 + (headerSize % 4 === 0 ? headerSize : headerSize + (4 - (headerSize % 4)))
   const entries = new Map()
   const walk = (node, prefix) => {
     for (const [name, value] of Object.entries(node.files || {})) {
@@ -218,6 +225,27 @@ function openAsar(file) {
     },
     close() { closeSync(fd) },
   }
+}
+
+// ---------------------------------------------------------------------------
+// Archive layout
+//
+// The runtime does not always sit at the archive root. macOS/Linux builds put
+// `node_modules` there (`/node_modules/@deepseek-ai/...`), while the Windows
+// desktop build nests the whole runtime under `dsh/`
+// (`/dsh/node_modules/@deepseek-ai/...`). Resolve each host path against every
+// known root so the gate reads the real host instead of reporting every file
+// as missing. Order matters: the root layout wins when both exist.
+// ---------------------------------------------------------------------------
+const RUNTIME_ROOTS = ['', '/dsh']
+
+/** Read one host path, trying each known archive root. @returns {string|null} */
+function readHost(reader, hostPath) {
+  for (const root of RUNTIME_ROOTS) {
+    const raw = reader.read(`${root}${hostPath}`)
+    if (raw !== null) return raw
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -407,6 +435,21 @@ const CHECKS = [
   { kind: 'absent', id: 'clientSession.chat (never existed)', file: API_SESSION, member: 'chat', what: 'client Session.chat must NOT exist', usedBy: 'HIGH-1 was getSnapshot()?.chat?.nodes — undefined on this host', hint: '取节点用 store.loadThrough(seq) 或 slot 的 useChat(s=>s.nodes)' },
   { kind: 'absent', id: 'clientSession.nodes (never existed)', file: API_SESSION, member: 'nodes', what: 'client Session.nodes must NOT exist', usedBy: 'same as above', hint: '同 clientSession.chat' },
 
+  // ── 0.2.0 message projections (the fold refuses a log it cannot interpret) ─
+  // DSH 0.2.0 turned the surface fold into `foldSurface(events, projections = [])`
+  // and made it THROW for a projection-owned event whose interpreter is missing:
+  //   session event "image/offload" requires a message projection; load its
+  //   owning plugin or supply its projection definition
+  // `image/offload` is emitted routinely (dsh-compaction-image-offload appends it
+  // and registers its interpreter on the `sessions` service), so folding a 0.2.0
+  // log WITHOUT the live definitions throws → the plugin's span path reports
+  // replay-failed (an internal error) for every recall/edit/rollback on a session
+  // that ever offloaded an image. These four pins keep the supply path alive.
+  { kind: 'present', id: 'foldSurface.projections', file: SESSION, re: /function foldSurface\(events, projections = \[\]\)/, what: 'foldSurface(events, projections = []) — accepts message-projection definitions', usedBy: 'lib/adapter/dsh.js:208, lib/rollback.js:97' },
+  { kind: 'present', id: 'MESSAGE_PROJECTION_EVENT_TYPES', file: SESSION, re: /MESSAGE_PROJECTION_EVENT_TYPES = new Set\(\["image\/offload"\]\)/, what: 'MESSAGE_PROJECTION_EVENT_TYPES = {image/offload} — an interpreter is mandatory', usedBy: 'lib/adapter/dsh.js messageProjectionsOf (the reason definitions must be supplied)', hint: '若该集合新增事件类型,核实其解释器是否也需随折叠一起带上' },
+  { kind: 'present', id: 'sessions.messageProjections', file: SESSION, re: /get messageProjections\(\)\s*\{/, what: 'SessionStore.messageProjections — the live borrowed definitions', usedBy: 'lib/adapter/dsh.js computeSpan(opts.projections), lib/rollback.js contextDiff, lib/index.js:371, lib/http.js:420' },
+  { kind: 'present', id: 'sessions.registerMessageProjection', file: SESSION, re: /^\s+registerMessageProjection\(projection\)\s*\{/m, what: 'SessionStore.registerMessageProjection(projection) — how the owning plugin publishes its interpreter', usedBy: '宿主插件 dsh-compaction-image-offload:140 注册 image/offload 解释器' },
+
   // ── reverse assertions: removed members must stay removed ─────────────────
   { kind: 'absent', id: 'Session.events (removed)', file: SESSION, scope: SESSION_CLASS, member: 'events', what: 'Session.events must NOT exist', usedBy: 'all reads must go through lib/host-compat.js (sessionEvents/eventAt)', hint: '若宿主恢复同名成员,先核实语义再迁移;直读会让 host-compat 之外的代码重新漂移' },
   { kind: 'absent', id: 'Session.events (removed, bundled copy)', file: SESSION_TYPES, scope: SESSION_CLASS_TYPES, member: 'events', what: 'Session.events must NOT exist (second bundled copy)', usedBy: '同上', hint: '同 SESSION' },
@@ -425,13 +468,21 @@ const CHECKS = [
   // whether a legacy view exists (their actual read goes through sessionEvents),
   // and tightening it further would require editing lib/ — out of scope here.
   { kind: 'absent', id: 'plugin.no-session-events-read', plugin: { dir: 'lib', skip: ['lib/host-compat.js', 'lib/dynamic-host.js'], re: /\bsession\s*\.\s*events\b|\bsession\s*\?\.\s*events\s*(?:\.|\[|\?\?|\|\||&&)|\bsession\s*\[\s*['"]events['"]\s*\]/ }, what: 'no session.events value-read outside lib/host-compat.js', usedBy: 'lib/host-compat.js:sessionEvents is the only sanctioned legacy read', hint: '任何新的直读都会在 2.0.9 宿主上抛 TypeError;走 sessionEvents()/eventAt()' },
+
+  // A single-argument fold is the exact 0.2.0 defect this port fixes: on a log
+  // containing `image/offload` the host throws instead of folding. Pin the
+  // plugin side (finite, fully checkable) rather than enumerating host forms.
+  // Matches a bare identifier path argument only (`foldSurface(events)`), so
+  // prose such as `foldSurface(events, projections = [])` and `foldSurface(...)`
+  // in comments does not trip it.
+  { kind: 'absent', id: 'plugin.foldSurface-needs-projections', plugin: { dir: 'lib', skip: [], re: /\bfoldSurface\s*\(\s*[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\)/ }, what: 'no single-argument foldSurface(...) call in lib/', usedBy: 'lib/adapter/dsh.js:208, lib/rollback.js:97', hint: '0.2.0 起折叠必须带消息投影定义(见 lib/adapter/dsh.js messageProjectionsOf);否则含 image/offload 的日志抛错 → replay-failed' },
 ]
 
 // ---------------------------------------------------------------------------
 // Run
 // ---------------------------------------------------------------------------
 function readPackageVersion(reader, path) {
-  const raw = reader.read(path)
+  const raw = readHost(reader, path)
   if (raw === null) return '?'
   try { return JSON.parse(raw).version ?? '?' } catch { return '?' }
 }
@@ -486,7 +537,7 @@ function main() {
           continue
         }
 
-        const raw = reader.read(check.file)
+        const raw = readHost(reader, check.file)
         if (raw === null) {
           failed += 1
           console.log(`❌ ${check.id} — 宿主文件不在 asar: ${check.file}`)

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { DEFAULT_CONFIG, parseRetraceConfig, ROUTE_PREFIX, createRetraceHttpHandler } from '../lib/http.js'
+import { replaceOp } from './surface-op-shape.js'
 
 /**
  * 让"宿主进程是不是 Electron"在本用例内**确定**,不随跑测的 node 而变。
@@ -537,7 +538,7 @@ describe('POST recall · HTTP 入口 span mode（回归：recall tail 两入口�
       expect(followup).toHaveBeenCalledTimes(1)
       expect(followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
       // 载体:遮蔽该轮;业务溯源 targetSeq 由区间起点派生(读端口径)
-      expect(markers[0].surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+      expect(markers[0].surfaceOp).toEqual(replaceOp(3, 4))
       expect(carrierTargetSeq(markers[0])).toBe(3)
       expect(markers[0].data.id).toMatch(/^retrace-regenerate-/)
     } finally {

@@ -1,0 +1,174 @@
+warning: in the working copy of 'old/lib/checks.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'new/lib/checks.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'old/lib/validate.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'new/lib/validate.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'old/lib/version-support.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'new/lib/version-support.js', LF will be replaced by CRLF the next time Git touches it
+diff --git a/lib/checks.js b/lib/checks.js
+--- a/lib/checks.js
++++ b/lib/checks.js
+@@ -15,10 +15,20 @@ import { ruleById } from './contracts.js';
+ export const SURFACE_TYPES = new Set(['user/message', 'assistant/message', 'tool/result']);
+ /** v3 新增 `system/message`（官方 `SURFACE_EVENT_TYPES`，0.1.5 `lib/index.js:149-154`）。 */
+ export const MODERN_SURFACE_TYPES = new Set([...SURFACE_TYPES, 'system/message']);
++/**
++ * v4 新增 `developer/message`（官方 v4 `SURFACE_EVENT_TYPES`：
++ * `@deepseek-ai/dsh-session@0.2.0-rc.1 lib/types/surface.js:13-19` =
++ * {system, developer, user, assistant, tool}/message；`isSurfaceEligibleType`
++ * 对 `developer/message` 返回 true）。缺了它，每个合法的 v4 developer/message
++ * （工具清单变更，`dsh-agent-loop/lib/index.js:1241-1248` 以 `surfaceOp:'append'` 写）
++ * 都会被 S2 误报为「非 surface 类型却携带 surfaceOp」。
++ */
++export const V4_SURFACE_TYPES = new Set([...MODERN_SURFACE_TYPES, 'developer/message']);
+ export const CHUNK_ROW_TYPES = new Set(['text-chunks', 'reasoning-chunks', 'tool-call-chunks']);
+ 
+-/** 当前文件版本适用的 surface 候选类型集（v3 起含 system/message）。version = 被检文件版本。 */
++/** 当前文件版本适用的 surface 候选类型集（v3 起含 system/message，v4 起含 developer/message）。version = 被检文件版本。 */
+ export function currentSurfaceTypes(version) {
++  if (version >= 4) return V4_SURFACE_TYPES;
+   return version >= 3 ? MODERN_SURFACE_TYPES : SURFACE_TYPES;
+ }
+ export const MARKER_PREFIXES = ['retrace', 'message-editor'];
+@@ -96,7 +106,7 @@ export function envelopeViolations(event, loc, version) {
+       }
+     }
+   }
+-  out.push(...messageShapeViolations(event, loc));
++  out.push(...messageShapeViolations(event, loc, version));
+   return out;
+ }
+ 
+@@ -104,8 +114,15 @@ export function envelopeViolations(event, loc, version) {
+ export const ENVELOPE_ALLOWED_KEYS = new Set(['type', 'seq', 'time', 'data', 'surfaceOp', 'sourceEventSeqs', 'ignorable']);
+ 
+ /** 镜像官方 assertMessageEventShape（lib/index.js:1242-1266）。 */
+-export function messageShapeViolations(event, loc) {
++export function messageShapeViolations(event, loc, formatVersion = 0) {
+   const type = event.type;
++  // v4（`SESSION_FORMAT_VERSION = 4`，DSH 0.2.0-rc.1）把 tool/result 改成
++  // 一等 tool-role 消息，并把 system/message 的产出者 kind 由 `plugin` 改为 `system-prompt`。
++  // 本函数原先逐字镜像的是已发布的 **v3** 形状 ⇒ 在 v4 文件上对每个合法 tool/result 误报
++  // E6、对每个合法 system/message 误报 E9（实测：一份 68 事件健康 v4 会话报 24 条 E6 + 1 条 E9，
++  // retrace 的写前守卫据此拒绝落盘 ⇒ 编辑/撤回完全不可用）。按**被检文件版本**择路
++  // ——本包既有判据就是「判据必须来自文件自身的版本，不是判官(运行时)的版本」。
++  const v4 = formatVersion >= 4;
+   // 把 v3 新增的 `system/message` 纳入形状检查（MESSAGE_ROLE_BY_TYPE:system/message → system,
+   // dsh-session@0.1.5-rc.1 lib/index.js:917-926;source 要求 :942-944）。旧实现只查 user/assistant/tool
+   // ⇒ 实测反例（system/message 的 source.kind='user'）宿主拒、旧契约 0 违规。
+@@ -122,7 +139,8 @@ export function messageShapeViolations(event, loc) {
+   if (typeof message.id !== 'string' || message.id === '') {
+     out.push(violation('E6', loc, `${shape()}：id 必须为非空字符串`));
+   }
+-  const expectedRole = type === 'assistant/message' ? 'assistant' : (type === 'system/message' ? 'system' : 'user');
++  // v4 的 `MESSAGE_ROLE_BY_TYPE["tool/result"] === 'tool'`（0.2.0-rc.1 lib/index.js:1183-1189）；v3 是 'user'。
++  const expectedRole = type === 'assistant/message' ? 'assistant' : (type === 'system/message' ? 'system' : (type === 'tool/result' && v4 ? 'tool' : 'user'));
+   if (message.role !== expectedRole) {
+     out.push(violation('E6', loc, `${shape()}：role 必须为 "${expectedRole}"，实际 ${String(message.role)}`));
+   }
+@@ -139,9 +157,17 @@ export function messageShapeViolations(event, loc) {
+     }
+   }
+   if (type === 'system/message') {
+-    // E9(候选规则):system/message 必须 plugin source（kind==='plugin' + plugin 非空）。
+-    // 宿主依据:dsh-session@0.1.5-rc.1 lib/index.js:942-944（"must have plugin source"）。
+-    if (source?.kind !== 'plugin' || typeof source.plugin !== 'string' || source.plugin === '') {
++    if (v4) {
++      // E9(v4)：v4 起 `system/message` 的产出者 kind 由 `plugin` 改名为 `system-prompt`，
++      // 且**仍**要求该 kind（宿主 0.2.0-rc.1 `lib/index.js:1206`：
++      // `must have system-prompt source`；官方构造器 `createSystemMessage` 写
++      // `source:{kind:'system-prompt'}`）。v3 的 `plugin` 形状在 v4 上被宿主直接拒。
++      if (source?.kind !== 'system-prompt') {
++        out.push(violation('E9', loc, `${shape()}：v4 的 system/message 必须带 system-prompt source（kind==='system-prompt'）——宿主 lib/index.js:1206`));
++      }
++    } else if (source?.kind !== 'plugin' || typeof source.plugin !== 'string' || source.plugin === '') {
++      // E9(候选规则):system/message 必须 plugin source（kind==='plugin' + plugin 非空）。
++      // 宿主依据:dsh-session@0.1.5-rc.1 lib/index.js:942-944（"must have plugin source"）。
+       out.push(violation('E9', loc, `${shape()}：system/message 必须带 plugin source（kind==='plugin' 且 plugin 非空）——宿主 lib/index.js:942-944`));
+     }
+   }
+@@ -150,11 +176,27 @@ export function messageShapeViolations(event, loc) {
+       out.push(violation('E6', loc, `${shape()}：tool/result 必须带 tool source（callId 非空）`));
+     }
+     const content = message.content;
+-    const block = Array.isArray(content) ? content[0] : undefined;
+-    if (content?.length !== 1 || typeof block !== 'object' || block === null || block.type !== 'tool-result' || !Array.isArray(block.content)) {
+-      out.push(violation('E6', loc, `${shape()}：必须恰含一个 tool-result block`));
+-    } else if (block.toolCallId !== source?.callId) {
+-      out.push(violation('E6', loc, `${shape()}：block.toolCallId 与 source.callId 不匹配`));
++    if (v4) {
++      // v4 一等 tool-role 消息（宿主 0.2.0-rc.1 `lib/index.js:1213-1215`：
++      // role 'tool' + `message.toolCallId === source.callId`；官方构造器
++      // `createToolResultMessage` 写 `{role:'tool', toolCallId, content, isError}`）。
++      // 已发布的 `tool-result` 包裹块在 v4 被拒。
++      if (Array.isArray(content) && content.some((b) => typeof b === 'object' && b !== null && b.type === 'tool-result')) {
++        out.push(violation('E6', loc, `${shape()}：v4 的 tool/result 不得含 tool-result 包裹块（已改为一等 tool-role 消息）`));
++      }
++      if (typeof message.toolCallId !== 'string' || message.toolCallId === '' || message.toolCallId !== source?.callId) {
++        out.push(violation('E6', loc, `${shape()}：v4 要求 message.toolCallId 与 source.callId 一致（实际 ${String(message.toolCallId)}）`));
++      }
++      if (message.isError !== undefined && typeof message.isError !== 'boolean') {
++        out.push(violation('E6', loc, `${shape()}：v4 的 isError 若存在必须为布尔`));
++      }
++    } else {
++      const block = Array.isArray(content) ? content[0] : undefined;
++      if (content?.length !== 1 || typeof block !== 'object' || block === null || block.type !== 'tool-result' || !Array.isArray(block.content)) {
++        out.push(violation('E6', loc, `${shape()}：必须恰含一个 tool-result block`));
++      } else if (block.toolCallId !== source?.callId) {
++        out.push(violation('E6', loc, `${shape()}：block.toolCallId 与 source.callId 不匹配`));
++      }
+     }
+   }
+   return out;
+diff --git a/lib/validate.js b/lib/validate.js
+--- a/lib/validate.js
++++ b/lib/validate.js
+@@ -99,8 +99,9 @@ export function validateSessionLog(log, opts = {}) {
+     if (header.type !== 'session') {
+       violations.push(violation('H1', { lineNo: headerLine }, `首行 type 必须为 "session"（实际 ${String(header.type)}）`));
+     }
+-    if (![0, 1, 2, 3].includes(header.version)) {
+-      violations.push(violation('H2', { lineNo: headerLine }, `header.version 未知（实际 ${String(header.version)}）——已知 0/1/2/3；未知版本按 0 处理会误判，请先确认格式`));
++    // 本地补丁：加上 4（DSH 0.2.0-rc.1 的 SESSION_FORMAT_VERSION）。
++    if (![0, 1, 2, 3, 4].includes(header.version)) {
++      violations.push(violation('H2', { lineNo: headerLine }, `header.version 未知（实际 ${String(header.version)}）——已知 0/1/2/3/4；未知版本按 0 处理会误判，请先确认格式`));
+     }
+     if (typeof header.id !== 'string' || header.id === '') {
+       violations.push(violation('H2', { lineNo: headerLine }, 'header.id 必须为非空字符串'));
+@@ -273,7 +274,8 @@ function unassessableResult({ header, headerLine, rows, events, frameInfo, baseS
+     violations.push(violation('H1', { lineNo: headerLine }, '首行不是合法 JSON —— 整个会话不可读'));
+   } else {
+     if (header.type !== 'session') violations.push(violation('H1', { lineNo: headerLine }, `首行 type 必须为 "session"（实际 ${String(header.type)}）`));
+-    if (![0, 1, 2, 3].includes(header.version)) violations.push(violation('H2', { lineNo: headerLine }, `header.version 未知（实际 ${String(header.version)}）`));
++    // 本地补丁：加上 4（DSH 0.2.0-rc.1 的 SESSION_FORMAT_VERSION）。
++    if (![0, 1, 2, 3, 4].includes(header.version)) violations.push(violation('H2', { lineNo: headerLine }, `header.version 未知（实际 ${String(header.version)}）`));
+     if (typeof header.id !== 'string' || header.id === '') violations.push(violation('H2', { lineNo: headerLine }, 'header.id 必须为非空字符串'));
+     if (!Number.isSafeInteger(header.createdAt) || header.createdAt < 0) violations.push(violation('H2', { lineNo: headerLine }, 'header.createdAt 必须为非负安全整数'));
+     if (header.cwd !== undefined && (typeof header.cwd !== 'string' || !header.cwd.startsWith('/'))) violations.push(violation('H2', { lineNo: headerLine }, 'header.cwd 若存在必须为绝对路径'));
+diff --git a/lib/version-support.js b/lib/version-support.js
+--- a/lib/version-support.js
++++ b/lib/version-support.js
+@@ -29,10 +29,21 @@ export const TESTED_BASELINE = Object.freeze({
+   peerRange: '^0.1.0-rc.7 || ^0.1.5-rc.1',
+   /** 会话格式版本基线（= 宿主 SESSION_FORMAT_VERSION）。 */
+   sessionFormatVersion: 3,
+-  /** 已知/受支持的会话格式版本（0/1/2 由本包 vendored 词表 + 本地等价折叠支持）。 */
+-  knownFormatVersions: Object.freeze([0, 1, 2, 3]),
++  /**
++   * 已知/受支持的会话格式版本（0/1/2 由本包 vendored 词表 + 本地等价折叠支持）。
++   *
++   * ⚠️ 本地补丁：加上了 4。本包（含 0.3.17）原生只支持到 v3，而 DSH 0.2.0-rc.1 的
++   * `SESSION_FORMAT_VERSION = 4`；`lib/checks.js` 已同步补上 v4 的消息形状规则
++   * （tool/result 一等 tool 角色、system/message 的 source.kind 改为 system-prompt、
++   * surface 候选集加 developer/message）。**不把 4 列进来**的话 `detectSupport()`
++   * 会对每份 v4 文件给出 `readOnly: true`，调用方按本包自己的规则②「未知格式只读」
++   * 跳过写入前判定 —— 那么 checks.js 的 v4 规则永远不会被执行（补丁形同虚设）。
++   * v4 在此仍报 `legacy`（已知、但非本包的历史基线版本），宿主比基线新时照旧告警。
++   */
++  knownFormatVersions: Object.freeze([0, 1, 2, 3, 4]),
+   note: '旧格式（0/1/2）由本包自带的 vendored 词表与 legacyFoldSurface 支持,与宿主版本无关;'
+-    + 'v3 用运行时词表/官方 foldSurface ⇒ 需要宿主 SESSION_FORMAT_VERSION ≥ 3。',
++    + 'v3 用运行时词表/官方 foldSurface ⇒ 需要宿主 SESSION_FORMAT_VERSION ≥ 3;'
++    + 'v4 由本地补丁支持（DSH 0.2.0-rc.1）。',
+ });
+ 
+ /**

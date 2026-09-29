@@ -1,3 +1,77 @@
+### 0.5.0(2026-09-29 · DSH 0.2.0 适配版 —— 会话格式 v3→v4)
+
+> **面向宿主 `@deepseek-ai/dsh-session@0.2.0-rc.1`**（`SESSION_FORMAT_VERSION = 4`）。
+> `0.4.x` 面向 0.1.5（v3）。**这是不兼容的宿主代际切换**：0.5.0 仍兼容 0.1.x 宿主
+> （各条修复都做了双代兼容），但 0.4.x **不能**在 0.2.0 上工作。
+
+- **【宿主侧变更·非本插件缺陷】会话文件改名 `session.v4.jsonl.zstd`**：`0.4.x` 只认
+  `session.v3.jsonl.zstd` / `session.jsonl.zstd` ⇒ 在 0.2.0 上**一个会话文件都找不到**
+  （文件权威路径静默退回内存视图：span 计算、短码推导、考古 CLI 全线降级）。
+  现三代名字都认，数组序仍是"新基座优先"。常量按**版本命名**而非下标，
+  插新名不会让 `V3_SESSION_FILE` 悄悄变成 v4。
+- **【宿主侧变更·非本插件缺陷】`foldSurface(events, projections = [])` 会抛错**：
+  0.2.0 对"有主但没带解释器"的投影事件直接
+  `session event "image/offload" requires a message projection`。`image/offload` 是
+  常规事件（`dsh-compaction-image-offload` 会 append 并注册解释器）⇒ 不带定义折叠
+  0.2.0 日志会表现成 `replay-failed`（内部错误），任何曾卸载过图片的会话
+  recall/edit/regenerate/rollback **全部失效**。现传入活的
+  `sessions.messageProjections`（`lib/index.js` / `lib/http.js` / `lib/rollback.js`
+  三处写入路径 + `lib/adapter/dsh.js` 的 span 计算）。定义一律取自**活宿主**的
+  `sessions.messageProjections`；定义真缺失而日志又含投影事件时，折叠抛错并如实报
+  `replay-failed`（不静默兜底、不冒充"已遮蔽"）。
+- **【宿主侧变更·非本插件缺陷】`dsh-log-contract` 只认格式 0–3 ⇒ 拒绝每一次写入**：
+  写前守卫重放**整份日志**，v3 规则对**宿主自己写的** v4 事件报出成百条 error
+  （`tool/result` 改为一等 `tool` 角色；`system/message` 的产出者 kind 改为
+  `system-prompt`；surface 类型集新增 `developer/message`）⇒ `marker-rejected` 拦死
+  recall/edit/regenerate/restore。现固定 `dsh-log-contract@0.3.17` 并应用
+  `patches/dsh-log-contract@0.3.17.patch`（声明在 `pnpm-workspace.yaml`——
+  pnpm 11 不再读 package.json 的 `pnpm` 字段），为该规则集补上 v4 形状与
+  `knownFormatVersions` 的 4。**补丁未生效时**（pnpm 只认根工程的
+  `patchedDependencies`，profile 安装不会自动应用）守卫按该库自己的
+  `supportOfLog().readOnly` 降级为**明确打日志的"仅告警"**，而不是拦死写入；
+  写入安全交由宿主 `Session.append` 的 `validateSessionEventData` +
+  `surfaceManager.validateNext` 兜底。两种情况插件都可用，补丁只是找回完整写前校验。
+- **【宿主侧变更·非本插件缺陷】聊天锚点变成"流键"**：0.2.0 把一个 `assistant-step`
+  拆成 `groupPart:'reasoning'` + `'response'`，`data-chat-anchor-key` 改为
+  `JSON.stringify([nodeKey, groupPart])`，新增恒为裸键的 `data-chat-node-key`。
+  旧的单属性选择器只藏住被撤回回复的 response 一半，推理一半与过程分组标题留在屏幕上。
+  现经 `anchorSelector()` 同时匹配两个属性（0.1.x 上无 `data-chat-node-key` ⇒ 空操作），
+  隐藏规则、跳转高亮、跳转 `waitForElement` 三处统一走它。
+  *已知观感残留*：两半都藏掉后过程分组标题可能留下一行空的折叠行（需 DOM 快照定论）。
+- **【宿主侧变更·非本插件缺陷】surface 类型集新增 `developer/message`**：
+  插件的镜像折叠（`lib/version-index.js`、`lib/client.js`）漏了它 ⇒ 每个
+  `developer/message`（`surfaceOp:'append'`）都不入面，版本 `messageCount` 少算、
+  分叉图脊缺节点。现与官方 `SURFACE_EVENT_TYPES` 逐字对齐（并补上一直缺的
+  `system/message`）。`lib/summary-gate.js` 的同类集合**刻意不动**：它筛的是
+  "带文本的消息"，加 `system/message` 会把系统提示混进版本摘要。
+- **【宿主侧变更·非本插件缺陷】压缩检查点来源改名**
+  `{kind:'plugin',plugin:'compact'}` → `{kind:'compact-checkpoint'}`：两代拼法都接受
+  （`lib/version-index.js`、`lib/client.js`），否则 0.2.0 的检查点会退化成通用
+  `replace` 并被版本视图过滤掉，时间线上再也看不到压缩点。
+- **【我方缺陷·0.4.32 起就存在】`scripts/check-host-contract.mjs` 读错 asar**：
+  ①数据区偏移按 `17 + headerSize` 算，而 JSON 头是**按 4 字节对齐**的（正确是
+  `16 + align4(headerSize)`）⇒ 每个文件都错位 1–3 字节，正则断言照旧命中、
+  `JSON.parse` 却静默失败（版本恒显示 `?`）；②宿主路径写死 macOS 布局
+  `/node_modules/...`，Windows 桌面版把运行时嵌在 `dsh/` 下 ⇒ 全部断言报"文件不在 asar"。
+  两处都修好后闸门才真正读到 0.2.0 宿主。另补 5 条 0.2.0 断言
+  （`foldSurface` 的 projections 形参、`MESSAGE_PROJECTION_EVENT_TYPES`、
+  `sessions.messageProjections`、`sessions.registerMessageProjection`）与一条
+  插件侧不变量"lib/ 内不得出现单参 `foldSurface(...)`"。
+- **【我方缺陷】`scripts/generate-dynamic.mjs` 依赖 LF 行尾**：strip 导入的正则锚在
+  `\n` 上，而 Windows 默认 `core.autocrlf=true` 让工作区全是 CRLF ⇒ 重新生成会产出
+  仍带 `import` 语句、无法编译的 `lib/dynamic-host.js`（`check-dynamic` 直接红）。
+  现读取时归一化为 LF、写出也归一化，生成件字节不再随平台变化（CI 的
+  "生成件是否过期"断言因此才可靠）。
+- **依赖面**：`peerDependencies` 的 `@deepseek-ai/dsh-*` 由 `^0.1.0-rc.6` 提到
+  `^0.2.0-rc.1`（注意 `^0.2.0` **匹配不上** `0.2.0-rc.1` 这种预发布版）；
+  `dsh-log-contract` 由 `^0.3.12` 固定为 `0.3.17`（补丁需要精确版本）；
+  `react` 仍为 `^18.2.0`（0.2.0 前端实装 18.3.1，标记法核对：
+  有 `"react.element"`、无 `react.transitional.element`）。
+- **验证**：宿主契约闸门 88/88 通过（0.2.0-rc.1 实装 asar）；探针 11/11 通过
+  （真实 12 个 v4 会话现可定位，修复前 0 个；含 `image/offload` 的日志折叠由
+  `replay-failed` 变为 `ok`）；`dsh-log-contract` 正/负向 9/9 通过（真实 v4 会话上
+  合法 round marker 全绿，v0 旧形状与"审计段带 surfaceOp"仍被拒——守卫没有被架空）。
+
 ### 0.4.28(2026-09-14 · 宿主契约漂移修复 + 版本/分叉视图可解释化 + 客户端 O(K·N²) 消除)
 
 > **注**：`0.4.27` 曾短暂发布后**撤回**（`npm dist-tag` 已退回 `0.4.26`，`0.4.27` 已标记 deprecated）。

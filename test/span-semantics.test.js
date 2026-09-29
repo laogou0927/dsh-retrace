@@ -20,6 +20,7 @@ import { shadowSpanOf } from '../lib/message-list.js'
 import { computeSpan } from '../lib/adapter/dsh.js'
 import { makeSession, makeAgent, makeApi } from './helpers.js'
 import { carrierShadowedSeqs } from '../lib/marker-carrier.js'
+import { markerSurfaceRange } from '../lib/adapter/contract.js'
 
 /** 通用事件(带 surfaceOp,官方 foldSurface 需要)——与 test/adapter.test.js 同风格。 */
 function conv() {
@@ -184,9 +185,12 @@ describe('预览 = 写入(端到端回归:业务层预览 / 适配层计算 / ho
     const marker = markerOf(session)
     // 被遮蔽 seq 的取值口径 = marker-carrier 的单一实现(两段结构的顶层数组首项是
     // 审计事件 seq,不属被遮蔽段)⇒ 断言读法与写入端一致。
+    // 区间端点按**运行时**键名读(markerSurfaceRange 是插件侧双形状读口;
+    // 真写入器在 SESSION_FORMAT_VERSION>=3 上写 startSeq/endSeq)。
+    const range = markerSurfaceRange(marker.surfaceOp)
     const written = {
-      start: marker.surfaceOp.start,
-      end: marker.surfaceOp.end,
+      start: range.start,
+      end: range.end,
       shadowedSeqs: carrierShadowedSeqs(marker),
     }
     // ①业务层预览(message-list 投影,UI 侧"将遮蔽这些消息")
@@ -210,7 +214,8 @@ describe('预览 = 写入(端到端回归:业务层预览 / 适配层计算 / ho
     const api1 = makeApi(s1, makeAgent())
     expect((await api1.editAndResend({ sessionId: 's1', messageId: 'u1', text: 'x' })).ok).toBe(true)
     const marker1 = markerOf(s1)
-    expect({ start: marker1.surfaceOp.start, end: marker1.surfaceOp.end, shadowedSeqs: carrierShadowedSeqs(marker1) })
+    const range1 = markerSurfaceRange(marker1.surfaceOp)
+    expect({ start: range1.start, end: range1.end, shadowedSeqs: carrierShadowedSeqs(marker1) })
       .toEqual(shadowSpanOf(messagesOf(conv()), [], 0, { mode: 'round' }))
 
     const s2 = build()
@@ -219,7 +224,8 @@ describe('预览 = 写入(端到端回归:业务层预览 / 适配层计算 / ho
     const marker2 = markerOf(s2)
     // fromScratch = "重新开始"语义:从**第一个 user** 起 tail 到尾部(不是从目标自身)
     const preview2 = shadowSpanOf(messagesOf(conv()), [], 0, { mode: 'tail' })
-    expect({ start: marker2.surfaceOp.start, end: marker2.surfaceOp.end, shadowedSeqs: carrierShadowedSeqs(marker2) }).toEqual(preview2)
+    const range2 = markerSurfaceRange(marker2.surfaceOp)
+    expect({ start: range2.start, end: range2.end, shadowedSeqs: carrierShadowedSeqs(marker2) }).toEqual(preview2)
     expect(preview2.shadowedSeqs).toEqual([0, 1, 2, 3, 4, 5])
   })
 })

@@ -15,9 +15,16 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
-const read = (p) => readFileSync(join(root, p), 'utf8')
+// Read every source with LF endings. The generated files are committed and CI
+// asserts they are not stale, so their bytes must not depend on the
+// contributor's platform: with `core.autocrlf=true` (the Windows default) the
+// whole working tree is CRLF, and the import-strip regex below (which is
+// anchored on `\n`) then fails to match — regeneration silently emits a file
+// that still contains `import` statements and no longer compiles.
+const read = (p) => readFileSync(join(root, p), 'utf8').replace(/\r\n/g, '\n')
 const write = (p, content) => {
-  writeFileSync(join(root, p), content.endsWith('\n') ? content : `${content}\n`)
+  const lf = content.replace(/\r\n/g, '\n')
+  writeFileSync(join(root, p), lf.endsWith('\n') ? lf : `${lf}\n`)
   console.log(`generated ${p}`)
 }
 const indent = (text, spaces) =>

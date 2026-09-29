@@ -49,6 +49,6 @@ const result = await build({
   logLevel: 'silent'
 })
 
-const code = result.outputFiles[0].text
+const code = result.outputFiles[0].text.replace(/\r\n/g, '\n')
 writeFileSync(outfile, code.endsWith('\n') ? code : `${code}\n`)
 console.log(`built ${outfile} (${code.length} bytes)`)

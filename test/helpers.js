@@ -14,6 +14,7 @@ import { createEditorApi } from '../lib/host-core.js'
 import { createDshMarkerWriter, carrierContentOf } from '../lib/adapter/dsh-writer.js'
 import { isCarrierMarkerEvent } from '../lib/marker-carrier.js'
 import { deriveMessage, officialSurfaceMeter } from './official-meter.js'
+import { replaceOp, SURFACE_OP_START_KEY, SURFACE_OP_END_KEY } from './surface-op-shape.js'
 
 /** User message event factory (real user input → round boundary). */
 export function userMessage(id, text, extra = {}) {
@@ -145,7 +146,11 @@ export function makeSession({ host = 'new' } = {}) {
       if (LOG_ONLY_TYPES.has(type)) return record
       if (type === 'step/start' || type === 'step/end' || type === 'turn/start' || type === 'turn/end') return record
       if (options.surfaceOp && options.surfaceOp.op === 'replace') {
-        const { start, end } = options.surfaceOp
+        // Read the keys the live host actually writes (the real writer emits
+        // `{op,startSeq,endSeq}` on SESSION_FORMAT_VERSION >= 3) — see
+        // test/surface-op-shape.js.
+        const start = options.surfaceOp[SURFACE_OP_START_KEY]
+        const end = options.surfaceOp[SURFACE_OP_END_KEY]
         surface.nodes = surface.nodes.filter((seq) => seq < start || seq > end)
       }
       // The replacement marker itself becomes the new surface tail node
@@ -213,7 +218,7 @@ export function fakeCarrierWriter({ onWrite } = {}) {
       id: `retrace-${intent.op ?? 'recall'}-${intent.targetSeq ?? span.start}`,
       content: carrierContentOf(intent),
       source: { kind: 'model', provider: 'p', model: 'm' },
-    }, { surfaceOp: { op: 'replace', start: span.start, end: span.end }, sourceEventSeqs: [audit.seq, ...shadowed] })
+    }, { surfaceOp: replaceOp(span.start, span.end), sourceEventSeqs: [audit.seq, ...shadowed] })
     if (typeof onWrite === 'function') onWrite(marker)
     return marker
   }

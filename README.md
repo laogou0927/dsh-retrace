@@ -262,6 +262,59 @@ the symptom is usually a failed boot, not a wrong-looking feature.
 This section exists so you can tell **host-side breakage** from **plugin-side bugs**.
 Read it before filing an issue.
 
+### Host-side breaking changes that `0.5.0` adapts to — *not caused by this plugin*
+
+`0.5.0` is the **DSH 0.2.0 port**. DSH 0.2.0-rc.1 ships
+`@deepseek-ai/dsh-session@0.2.0-rc.1` with **`SESSION_FORMAT_VERSION = 4`** (up from
+3). Four of the changes below are hard breaks that made the plugin unusable, not
+merely degraded:
+
+1. **Session files were renamed `session.v3.jsonl.zstd` → `session.v4.jsonl.zstd`.**
+   The plugin only knew the v3 and legacy names, so on 0.2.0 it found **zero**
+   session files: the file-authoritative path (span computation, badge
+   derivation, archaeology) silently fell back to the in-memory view.
+   `lib/platform/session-paths.js` now recognises all three names, newest-first.
+2. **`foldSurface(events)` became `foldSurface(events, projections = [])` and now
+   *throws* when the log contains a projection-owned event whose interpreter is
+   missing** — `session event "image/offload" requires a message projection`.
+   `image/offload` is an ordinary 0.2.0 event (the `dsh-compaction-image-offload`
+   plugin appends it and registers its interpreter on `sessions`), so folding a
+   0.2.0 log without the definitions surfaced as `replay-failed` — an *internal
+   error* on every recall/edit/regenerate/rollback for any session that had ever
+   offloaded an image. The plugin now supplies the host's live
+   `sessions.messageProjections` definitions at every fold site.
+3. **`dsh-log-contract` (up to and including `0.3.17`) only understands session
+   formats 0–3**, while 0.2.0 writes v4. Because the pre-write guard re-validates
+   the **whole** log, the v3 rules reported hundreds of errors against the
+   *host's own* v4 events (`tool/result` is now a first-class `tool`-role message;
+   `system/message`'s producer kind is now `system-prompt`) and therefore rejected
+   **every** marker write. This build pins `dsh-log-contract@0.3.17` and applies
+   `patches/dsh-log-contract@0.3.17.patch` (declared in `pnpm-workspace.yaml`),
+   which teaches the rule set the v4 message shapes and the v4 surface-type set.
+   **If the patch is not applied** — note that pnpm only honours
+   `patchedDependencies` from the *root* project, so a profile install will not
+   apply it — the guard detects the unsupported format through the library's own
+   `supportOfLog().readOnly` and degrades to **loudly-logged advisory** instead of
+   blocking writes. Writes then rely on the host's own `Session.append`
+   validation. The plugin keeps working either way; the patch restores full
+   pre-write validation.
+4. **The chat DOM anchor became a "flow key".** 0.2.0 splits one `assistant-step`
+   node into a `groupPart:'reasoning'` entry plus a `groupPart:'response'` entry
+   and sets `data-chat-anchor-key` to `JSON.stringify([nodeKey, groupPart])`,
+   adding a new `data-chat-node-key` that always holds the bare node key.
+   `[data-chat-anchor-key="<nodeKey>"]` therefore hid only the *response* half of
+   a recalled reply, leaving its reasoning half on screen. The plugin now matches
+   both attributes (a no-op on 0.1.x, where `data-chat-node-key` does not exist).
+   *Known cosmetic residual*: hiding both halves can leave the process-group
+   header as an empty disclosure row.
+
+Two further 0.2.0 changes were adapted without user-visible breakage:
+`developer/message` joined the surface-eligible type set (the plugin's mirrored
+fold now includes it, so version `messageCount` and the fork-map spine stay
+accurate), and the compaction-checkpoint source kind was renamed
+`{kind:'plugin',plugin:'compact'}` → `{kind:'compact-checkpoint'}` (both spellings
+are now accepted, so historical logs still classify correctly).
+
 ### Host-side breaking changes that `0.4.26` adapts to — *not caused by this plugin*
 
 1. **`@deepseek-ai/dsh-session` dropped `decodeStorageRecord` from its public export surface (in `0.1.5-rc.1`; the function still exists internally but is no longer exported from the package root and is unreachable via the exports map).**

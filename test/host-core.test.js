@@ -25,6 +25,8 @@ import {
 import { isRoundBoundaryEvent } from '../lib/span-semantics.js'
 import { AUDIT_EVENT_TYPE, CARRIER_DATA_KEYS, carrierShadowedSeqs, carrierTargetSeq } from '../lib/marker-carrier.js'
 import { deriveMessage, officialNodePrice, officialSurfaceMeter } from './official-meter.js'
+import { replaceOp } from './surface-op-shape.js'
+import { markerSurfaceRange } from '../lib/adapter/contract.js'
 
 /** header + u1 + a1 + tool + u2 + a2 — the standard two-round session. */
 function standardSession() {
@@ -96,7 +98,7 @@ describe('recall', () => {
     expect(Object.keys(marker.data).sort()).toEqual([...CARRIER_DATA_KEYS].sort())
     expect(marker.data.turn).toBeUndefined()
     expect(marker.data.step).toBeUndefined()
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 5 })
+    expect(marker.surfaceOp).toEqual(replaceOp(4, 5))
     // 首元素 = 审计段(第 1 段)seq;其余 = 全部被遮蔽节点
     const audit = lastAudit(session)
     expect(marker.sourceEventSeqs).toEqual([audit.seq, 4, 5])
@@ -511,7 +513,8 @@ describe('两段结构:不再写 turn/step,载体 source.kind=\'model\'(改造�
     expect(audit.seq).toBeLessThan(marker.seq)
     expect(marker.sourceEventSeqs[0]).toBe(audit.seq)
     // 审计段声明的被遮蔽段 === 载体区间(读写两端同一份 range 推出)
-    expect(audit.data.shadowedRange).toEqual({ start: marker.surfaceOp.start, end: marker.surfaceOp.end })
+    const range = markerSurfaceRange(marker.surfaceOp)
+    expect(audit.data.shadowedRange).toEqual({ start: range.start, end: range.end })
     expect(audit.data.shadowedSeqs).toEqual(carrierShadowedSeqs(marker))
   })
 
@@ -769,7 +772,7 @@ describe('「提交中(message-pending)」vs「真被遮蔽(target-shadowed)」�
     // 重发文本必须是该轮(span 起点 seq 3 = u2)的原文
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('second')
     const marker = lastMarker(session)
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+    expect(marker.surfaceOp).toEqual(replaceOp(3, 4))
     expect(carrierTargetSeq(marker)).toBe(3) // 派生值 = 区间起点(该轮 user)
     expect(marker.data.editor).toBeUndefined()
   })
@@ -814,7 +817,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
     // 关键断言:重发该轮 user 原文,绝不是更早轮(seq 1)的文本
     expect(agent.followup.mock.calls[0][0].content[0].text).toBe('SAME ROUND PROMPT')
     const marker = lastMarker(session)
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 }) // 遮蔽范围 = 该轮
+    expect(marker.surfaceOp).toEqual(replaceOp(3, 4)) // 遮蔽范围 = 该轮
     // targetSeq 由区间起点派生(editor 不再落盘):区间起点 = 该轮 user seq 3
     expect(carrierTargetSeq(marker)).toBe(3)
   })
@@ -867,7 +870,7 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
       turn: 1, step: 1,
       message: { id: 'retrace-recall-x', role: 'assistant', content: [], source: { kind: 'model', provider: 'p', model: 'm' } },
       editor: { targetSeq: 1, text: '' },
-    }, { surfaceOp: { op: 'replace', start: 1, end: 2 }, sourceEventSeqs: [1, 2] })
+    }, { surfaceOp: replaceOp(1, 2), sourceEventSeqs: [1, 2] })
     session.surface.nodes.pop() // 内存 surface 滞后:目标 a2 未纳入
     session.dropAt(3) // 当前轮 user 是洞
 
@@ -884,6 +887,6 @@ describe('regenerate 重发文本取自文件侧,绝不越过稀疏洞/遮蔽区
     const marker = lastMarker(session)
     expect(marker.data.id).toMatch(/^retrace-regenerate-/)
     expect(carrierTargetSeq(marker)).toBe(3) // 不是被遮蔽幽灵轮的 seq 1
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 3, end: 4 })
+    expect(marker.surfaceOp).toEqual(replaceOp(3, 4))
   })
 })

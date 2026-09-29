@@ -15,6 +15,7 @@ import { createMarkerGuard, rollbackShareOf, isRestoreMarker, ROLLBACK_MIN_SURFA
 import { createEditorApi } from '../lib/host-core.js'
 import { carrierShadowedSeqs } from '../lib/marker-carrier.js'
 import { userMessage, assistantMessage, toolRow, headerEvent, makeSession, makeEnv, makeAgent, makeHooks } from './helpers.js'
+import { replaceOp } from './surface-op-shape.js'
 
 function validEnvelope(session) {
   return {
@@ -306,7 +307,7 @@ describe('host-core hooks.validateMarker', () => {
     expect(calledSession).toBe(session)
     expect(preExtra?.phase).toBe('pre')
     expect(preEnvelope.type).toBe('user/message')
-    expect(preEnvelope.surfaceOp).toEqual({ op: 'replace', start: 0, end: 1 })
+    expect(preEnvelope.surfaceOp).toEqual(replaceOp(0, 1))
     expect(preEnvelope.sourceEventSeqs).toEqual([0, 1])
     const [, pairEnvelope, pairExtra] = validateMarker.mock.calls[1]
     expect(pairExtra?.phase).toBe('pair')

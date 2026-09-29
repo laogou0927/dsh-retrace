@@ -18,6 +18,7 @@ import { createDshMarkerWriter } from '../lib/adapter/dsh-writer.js'
 import { officialSurfaceMeter, deriveMessage } from './official-meter.js'
 import { createEditorApi } from '../lib/host-core.js'
 import { makeSession, makeAgent, makeApi, userMessage, assistantMessage, headerEvent } from './helpers.js'
+import { replaceOp, SURFACE_OP_ENDPOINT_RE, RUNTIME_SURFACE_OP_SHAPE } from './surface-op-shape.js'
 
 const span = (start = 0, end = 2) => ({ start, end, shadowedSeqs: [start, start + 1, end].filter((v, i, a) => a.indexOf(v) === i && v <= end) })
 
@@ -68,7 +69,7 @@ describe('Span.shape(跨层 span 结构契约)', () => {
     expect(() => assertMarkerShape({
       seq: 12,
       type: 'user/message',
-      surfaceOp: { op: 'replace', start: 420, end: 415 },
+      surfaceOp: replaceOp(420, 415),
       sourceEventSeqs: [421, 420, 418, 415],
       data: {
         role: 'user',
@@ -131,7 +132,7 @@ describe('ReplaceWriter.marker(两段结构第 2 段契约)', () => {
   const good = {
     seq: 6,
     type: 'user/message',
-    surfaceOp: { op: 'replace', start: 0, end: 1 },
+    surfaceOp: replaceOp(0, 1),
     sourceEventSeqs: [5, 0, 1],
     data: {
       role: 'user',
@@ -150,7 +151,7 @@ describe('ReplaceWriter.marker(两段结构第 2 段契约)', () => {
   it('缺 surfaceOp / 非 user-message / data 成员越界 / content 空 / source 非 model → 报错', () => {
     expect(() => assertMarkerShape({ ...good, surfaceOp: undefined })).toThrow(/marker\.surfaceOp = \{op:'replace',start,end\}/)
     expect(() => assertMarkerShape({ ...good, type: 'assistant/message' })).toThrow(/marker\.type === 'user\/message'/)
-    expect(() => assertMarkerShape({ ...good, sourceEventSeqs: [5, 0, 1, 2] })).toThrow(/sourceEventSeqs 首尾 === surfaceOp\.start\/end/)
+    expect(() => assertMarkerShape({ ...good, sourceEventSeqs: [5, 0, 1, 2] })).toThrow(SURFACE_OP_ENDPOINT_RE)
     expect(() => assertMarkerShape({ ...good, seq: -1 })).toThrow(/marker\.seq 为非负安全整数/)
     // 官方 user/message 词表精确四成员:多一个成员即被官方拒(editor 无处容身)
     expect(() => assertMarkerShape({ ...good, data: { ...good.data, editor: { targetSeq: 0 } } }))
@@ -273,6 +274,9 @@ describe('assertMarkerShape 认双形状(v3 树 marker 不再误报)', () => {
   })
 
   it('v0 形状仍按 v0 键名报错(不回归)', () => {
+    // 与上两条同法:**注入 v0 目标树**,故该用例在 v0/v3 两棵树上都测同一件事
+    // (本机运行时是 v3 树 ⇒ 不注入的话它测的其实是"当前树",而不是 v0 语义)。
+    const v0rt = { shape: 'start/end', version: 0, startKey: 'start', endKey: 'end' }
     const v0Good = {
       seq: 6, type: 'user/message',
       surfaceOp: { op: 'replace', start: 0, end: 1 }, sourceEventSeqs: [5, 0, 1],
@@ -282,9 +286,14 @@ describe('assertMarkerShape 认双形状(v3 树 marker 不再误报)', () => {
         source: { kind: 'model', provider: 'p', model: 'm' },
       },
     }
-    expect(assertMarkerShape(v0Good)).toBe(v0Good)
-    expect(() => assertMarkerShape({ ...v0Good, sourceEventSeqs: [5, 0, 1, 2] }))
+    expect(assertMarkerShape(v0Good, 'ReplaceWriter.marker', { runtimeShape: v0rt })).toBe(v0Good)
+    expect(() => assertMarkerShape({ ...v0Good, sourceEventSeqs: [5, 0, 1, 2] }, 'ReplaceWriter.marker', { runtimeShape: v0rt }))
       .toThrow(/sourceEventSeqs 首尾 === surfaceOp\.start\/end/)
+    // 反向(上一条的对偶):**在当前运行时写 v0 形状**同样必须被拒 —— 这正是把
+    // 测试套件从 0.1.5 迁到 0.2.0-rc.1(SESSION_FORMAT_VERSION=4)时暴露的故障模式。
+    if (RUNTIME_SURFACE_OP_SHAPE.shape === 'startSeq/endSeq') {
+      expect(() => assertMarkerShape(v0Good)).toThrow(/形状须与当前运行时一致/)
+    }
   })
 })
 
@@ -318,7 +327,7 @@ describe('端到端:跨层契约违规 → 立刻明确报错(不静默、不奇
       userMessage('u2', 'q2'), assistantMessage('a2', 'r2'), userMessage('u3', 'q3'),
     )
     const positional = await writer.writeMarker(posSession, { start: 4, end: 1, shadowedSeqs: [4, 3, 2, 1] }, { op: 'recall', targetSeq: 1, originalText: '' })
-    expect(positional.surfaceOp).toEqual({ op: 'replace', start: 4, end: 1 })
+    expect(positional.surfaceOp).toEqual(replaceOp(4, 1))
   })
 
   it('适配器返回坏 marker → host-core 边界抛 contract-violation(经 op 信封成 code)', async () => {
@@ -385,7 +394,8 @@ describe('1.2 运行时 surfaceOp 形状探测(升级前置:形状必须随运�
   it('runtimeSurfaceOpShape():按 SESSION_FORMAT_VERSION 判定形状(v0→start/end,v3→startSeq/endSeq)', () => {
     const { runtimeSurfaceOpShape } = require('../lib/adapter/contract.js')
     const r = runtimeSurfaceOpShape()
-    // 本仓当前运行时 = 0.1.1-rc.2 ⇒ version 0 ⇒ v0 形状
+    // 形状随运行时:本仓当前运行时 = 0.2.0-rc.1 ⇒ SESSION_FORMAT_VERSION=4 ⇒ v3 形状
+    // (0.1.1-rc.2 = 0 ⇒ v0 形状)。断言按探测值分支,不钉死某一棵树。
     expect(typeof r.version).toBe('number')
     if (r.version >= 3) {
       expect(r.shape).toBe('startSeq/endSeq')

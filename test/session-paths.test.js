@@ -17,6 +17,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   SESSION_FILE_NAMES,
+  V4_SESSION_FILE,
   sessionRoots,
   activeSessionsRoot,
   pluginDataHome,
@@ -28,6 +29,9 @@ import {
   resolveBadgeTablePath,
 } from '../lib/platform/session-paths.js'
 
+// 新基座文件名**随宿主版本**:0.2.0 起 lib 的 SESSION_FILE_NAMES 是 [V4, V3, V0]。
+// 从 lib 导入而不是在本文件硬写,宿主再换代时这里跟着走。
+const V4 = V4_SESSION_FILE
 const V3 = 'session.v3.jsonl.zstd'
 const V0 = 'session.jsonl.zstd'
 const T0 = 1_700_000_000_000
@@ -113,12 +117,12 @@ describe('pickSessionFile', () => {
 
   it('mtime 平局时按数组序,新基座优先', () => {
     const dir = tmpRoot()
-    const a = join(dir, V3)
+    const a = join(dir, V4)
     const b = join(dir, V0)
     writeFileSync(b, '{}\n'); utimesSync(b, new Date(T0), new Date(T0))
     writeFileSync(a, '{}\n'); utimesSync(a, new Date(T0), new Date(T0))
     expect(pickSessionFile(dir)).toBe(a)
-    expect(SESSION_FILE_NAMES[0]).toBe(V3)
+    expect(SESSION_FILE_NAMES[0]).toBe(V4)
   })
 
   it('都没命中返回 null', () => {

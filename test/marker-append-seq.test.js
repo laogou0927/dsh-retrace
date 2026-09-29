@@ -28,6 +28,7 @@ import { sessionEvents } from '../lib/host-compat.js'
 import { createDshMarkerWriter } from '../lib/adapter/dsh-writer.js'
 import { createMarkerGuard } from '../lib/prewrite-guard.js'
 import { officialSurfaceProjection, officialNodePrice, officialSurfaceMeter, deriveMessage } from './official-meter.js'
+import { replaceOp } from './surface-op-shape.js'
 
 /** Mirrors the real machine's log tail (26033 = last seq 26032). */
 const REAL_TAIL = 26033
@@ -36,9 +37,15 @@ const SPAN = { start: 1, end: 2, shadowedSeqs: [1, 2] }
 
 /**
  * A host-shaped session: a `request/header`, one user/assistant round carrying
- * `surfaceOp: 'append'`, then log-only `assistant/chunk` padding up to `tail`.
+ * `surfaceOp: 'append'`, then log-only `assistant/attempt` padding up to `tail`.
  * Version comes from the installed `@deepseek-ai/dsh-session` so the writer's
  * `runtimeSurfaceOpShape()` and the contract's format version agree.
+ *
+ * ⚠️ 填充事件类型必须随宿主词表:`assistant/chunk` 只在 v0/v1 词表里
+ * (`dsh-log-contract/lib/vocab.js`:v2 dispositions = v0 − assistant/chunk
+ * + assistant/attempt);宿主升到 SESSION_FORMAT_VERSION=4 后,契约按 v4 词表判,
+ * 每个 chunk 都报 E3 ⇒ 真实写入被 marker-rejected 拦下。`assistant/attempt`
+ * 是 v2+ 的对应 log-only 类型,在两代词表里都已知。
  */
 function buildSession(tail, { host = 'new' } = {}) {
   const session = host === 'legacy' ? makeLegacySession() : makeSession()
@@ -54,7 +61,7 @@ function buildSession(tail, { host = 'new' } = {}) {
     { turn: 0, step: 0, message: { id: 'a1', role: 'assistant', content: [{ type: 'text', text: 'yo' }], source: { kind: 'model', ...MODEL } } },
     { surfaceOp: 'append' },
   )
-  for (let i = session.seq; i < tail; i++) session.append('assistant/chunk', { turn: 0, step: 0, text: 'x' })
+  for (let i = session.seq; i < tail; i++) session.append('assistant/attempt', { turn: 0, step: 0, text: 'x' })
   return session
 }
 
@@ -190,7 +197,7 @@ describe('two-segment pairing (no orphan audit on rejection)', () => {
  */
 describe('host shadow-price fold (the drift mechanism behind surfaceTokens)', () => {
   const prune = (seq, start, end, tokens) => ({ seq, type: 'compaction/prune', data: { shadowedRange: { start, end }, shadowedSeqs: [start, end], shadowedTokenCount: tokens } })
-  const replace = (seq, start, end) => ({ seq, type: 'user/message', surfaceOp: { op: 'replace', start, end }, data: { role: 'user', id: `retrace-x-${seq}`, content: [{ type: 'text', text: 'r' }], source: { kind: 'model', ...MODEL } } })
+  const replace = (seq, start, end) => ({ seq, type: 'user/message', surfaceOp: replaceOp(start, end), data: { role: 'user', id: `retrace-x-${seq}`, content: [{ type: 'text', text: 'r' }], source: { kind: 'model', ...MODEL } } })
   const fold = (log) => {
     let claim
     let total = 0

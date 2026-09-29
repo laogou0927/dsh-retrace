@@ -9,6 +9,7 @@ import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createRollbackExecutor } from '../lib/rollback.js'
 import { carrierTargetSeq } from '../lib/marker-carrier.js'
 import { makeAgent, makeHooks } from './helpers.js'
+import { replaceOp, SURFACE_OP_START_KEY, SURFACE_OP_END_KEY } from './surface-op-shape.js'
 
 /** User message event (real user input → round boundary). */
 function userMessage(id, text, extra = {}) {
@@ -35,17 +36,25 @@ function assistantMessage(id, text) {
   }
 }
 
-/** A recall-style marker replacement (empty assistant message). */
+/**
+ * A recall-style marker replacement — the plugin's real two-segment carrier
+ * (`user/message` + `surfaceOp` + provenance).
+ *
+ * It cannot be an `assistant/message`: the host refuses
+ * `assistant/message embeds its source stream and cannot carry sourceEventSeqs`,
+ * while a replace is *required* to cite `sourceEventSeqs`. The old
+ * `assistant/message` marker fixture only folded on the v0 tree.
+ */
 function markerEvent(id, span, sourceEventSeqs) {
   return {
-    type: 'assistant/message',
-    surfaceOp: { op: 'replace', start: span[0], end: span[span.length - 1] },
+    type: 'user/message',
+    surfaceOp: replaceOp(span[0], span[span.length - 1]),
     sourceEventSeqs,
     data: {
-      turn: null,
-      step: null,
-      message: { id, role: 'assistant', content: [], source: { kind: 'model', provider: 'test-provider', model: 'test-model' } },
-      editor: { targetSeq: span[0], text: 'edited' },
+      role: 'user',
+      id,
+      content: [{ type: 'text', text: '（此处内容已被撤回：原消息已归档，可在恢复视图中查看）' }],
+      source: { kind: 'model', provider: 'test-provider', model: 'test-model' },
     },
   }
 }
@@ -68,7 +77,9 @@ function makeSession(cwd = '/work') {
       events.push(record)
       if (record.type !== 'request/header') {
         if (record.surfaceOp && record.surfaceOp.op === 'replace') {
-          const { start, end } = record.surfaceOp
+          // Keys the live host actually writes (see test/surface-op-shape.js)
+          const start = record.surfaceOp[SURFACE_OP_START_KEY]
+          const end = record.surfaceOp[SURFACE_OP_END_KEY]
           surface.nodes = surface.nodes.filter((seq) => seq < start || seq > end)
         }
         surface.nodes.push(record.seq)
@@ -81,7 +92,9 @@ function makeSession(cwd = '/work') {
       // 与真实 dsh-session 一致：step/turn 边界不进 surface
       if (type === 'step/start' || type === 'step/end' || type === 'turn/start' || type === 'turn/end') return record
       if (options.surfaceOp && options.surfaceOp.op === 'replace') {
-        const { start, end } = options.surfaceOp
+        // Keys the live host actually writes (see test/surface-op-shape.js)
+        const start = options.surfaceOp[SURFACE_OP_START_KEY]
+        const end = options.surfaceOp[SURFACE_OP_END_KEY]
         surface.nodes = surface.nodes.filter((seq) => seq < start || seq > end)
       }
       surface.nodes.push(record.seq)
@@ -218,7 +231,7 @@ describe('rollback execute', () => {
     expect(audit.data.shadowedSeqs).toEqual([4])
     const marker = eventAt(session, 6)
     expect(marker.type).toBe('user/message')
-    expect(marker.surfaceOp).toEqual({ op: 'replace', start: 4, end: 4 })
+    expect(marker.surfaceOp).toEqual(replaceOp(4, 4))
     expect(marker.sourceEventSeqs).toEqual([5, 4])
     // 业务溯源 targetSeq 由区间起点派生（editor 已不再落盘；restore 的边界 seq 3
     // 不等于区间起点 4 ⇒ 该场景读到的派生值是区间起点，见报告「能力损失」一节）

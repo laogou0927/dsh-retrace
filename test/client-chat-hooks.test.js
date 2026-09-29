@@ -599,7 +599,11 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     const styles = collect(element).filter((element) => element.type === 'style')
     expect(styles).toHaveLength(1)
     expect(styles[0].props.dangerouslySetInnerHTML.__html)
-      .toContain('[data-chat-anchor-key="u1"]{display:none!important}')
+      // Both spellings are emitted: 0.2.0 splits one node into group parts and makes
+      // `data-chat-anchor-key` the flow key, adding `data-chat-node-key` for the bare
+      // node key (see anchorSelector in lib/client.js). The second half is a no-op on
+      // 0.1.x, which has no such attribute.
+      .toContain('[data-chat-anchor-key="u1"],[data-chat-node-key="u1"]{display:none!important}')
     expect(collect(element).some((element) => element.props.role === 'status')).toBe(true)
   })
 
@@ -809,7 +813,7 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
       await hooks.jumpToAnchor(store, 5, () => refNodes)
       expect(dom.state.switched, 'the tab must switch once the key is known').toBe(true)
       expect(dom.state.scrolls, 'the resolved row must be scrolled into view').toBe(1)
-      expect(dom.state.anchorSelectors).toContain('[data-chat-anchor-key="u5"]')
+      expect(dom.state.anchorSelectors).toContain('[data-chat-anchor-key="u5"],[data-chat-node-key="u5"]')
     } finally {
       hooks.__setMessageEditorWire(null)
       dom.restore()
@@ -865,7 +869,7 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
       await hooks.jumpToAnchor({ hasMore: true, loadOlder: async () => {} }, 5, () => nodes)
       expect(dom.state.switched, 'the tab switches as soon as the key is known').toBe(true)
       expect(dom.state.scrolls).toBe(0)
-      expect(dom.state.anchorSelectors).toContain('[data-chat-anchor-key="u5"]')
+      expect(dom.state.anchorSelectors).toContain('[data-chat-anchor-key="u5"],[data-chat-node-key="u5"]')
       expect(reports.at(-1)?.payload?.source).toBe('jump-unavailable:row-not-rendered')
       expect(warn).toHaveBeenCalled()
     } finally {

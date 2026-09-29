@@ -234,6 +234,49 @@ Client 半区会依据包内 `dsh.client` 元数据被自动打包进 Web 客户
 
 本节的目的：让你能分清 **宿主侧破坏性变更** 与 **插件侧缺陷**。提 issue 前请先看这节。
 
+### `0.5.0` 适配的宿主侧破坏性变更 —— *不是本插件造成的*
+
+`0.5.0` 是 **DSH 0.2.0 适配版**。DSH 0.2.0-rc.1 的
+`@deepseek-ai/dsh-session@0.2.0-rc.1` 把 **`SESSION_FORMAT_VERSION` 从 3 提到 4**。
+下列四条是**硬破坏**（不是"降级"，是"完全不可用"）：
+
+1. **会话文件改名 `session.v3.jsonl.zstd` → `session.v4.jsonl.zstd`。**
+   插件只认 v3 与旧基座名，于是在 0.2.0 上**一个会话文件都找不到**：文件权威路径
+   （span 计算、短码推导、考古 CLI）静默退回内存视图。
+   `lib/platform/session-paths.js` 现在三代名字都认，新基座在前。
+2. **`foldSurface(events)` 变成 `foldSurface(events, projections = [])`，并且当日志里
+   出现"有主但没带解释器"的投影事件时直接抛错**——
+   `session event "image/offload" requires a message projection`。
+   `image/offload` 是 0.2.0 的常规事件（`dsh-compaction-image-offload` 会 append 它，
+   并把解释器注册到 `sessions`），所以不带定义去折叠 0.2.0 日志会表现为
+   `replay-failed`（**内部错误**）——任何曾卸载过图片的会话，recall/edit/regenerate/
+   rollback 全部失效。插件现在在每个折叠点都传入宿主活的
+   `sessions.messageProjections`。
+3. **`dsh-log-contract`（含最新 `0.3.17`）只认会话格式 0–3**，而 0.2.0 写的是 v4。
+   写前守卫会**重放整份日志**，于是 v3 规则对**宿主自己写的** v4 事件报出成百条错误
+   （`tool/result` 已改为一等 `tool` 角色消息；`system/message` 的产出者 kind 已改为
+   `system-prompt`），进而**拒绝每一次 marker 落盘**。本版固定
+   `dsh-log-contract@0.3.17` 并应用 `patches/dsh-log-contract@0.3.17.patch`
+   （在 `pnpm-workspace.yaml` 里声明），为该规则集补上 v4 的消息形状与 surface 类型集。
+   **若补丁未生效**——注意 pnpm 只认**根工程**的 `patchedDependencies`，
+   profile 安装不会自动应用——守卫会通过该库自己的 `supportOfLog().readOnly`
+   识别出"格式不受支持"，降级为**明确打日志的"仅告警"**，而不是拦死写入；
+   此时写入安全由宿主自己的 `Session.append` 校验兜底。两种情况下插件都能用，
+   补丁只是把完整的写前校验找回来。
+4. **聊天 DOM 锚点变成了"流键"（flow key）。** 0.2.0 把一个 `assistant-step` 节点拆成
+   `groupPart:'reasoning'` 与 `groupPart:'response'` 两条，并把
+   `data-chat-anchor-key` 设为 `JSON.stringify([nodeKey, groupPart])`，同时新增
+   `data-chat-node-key`（恒为裸节点键）。于是
+   `[data-chat-anchor-key="<nodeKey>"]` 只藏住被撤回回复的 **response 那一半**，
+   推理那一半仍留在屏幕上。插件现在两个属性都匹配（在 0.1.x 上是空操作——
+   那边没有 `data-chat-node-key`）。*已知观感残留*：两半都藏掉后，
+   过程分组标题可能留下一行空的折叠行。
+
+另有两处 0.2.0 变更已适配、无用户可见破坏：`developer/message` 加入
+surface 候选类型集（插件的镜像折叠已包含它，版本 `messageCount` 与分叉图脊不再少算），
+以及压缩检查点来源改名 `{kind:'plugin',plugin:'compact'}` → `{kind:'compact-checkpoint'}`
+（两种拼法都接受，历史日志仍能正确分类）。
+
 ### `0.4.26` 适配的宿主侧破坏性变更 —— *不是本插件造成的*
 
 1. **`@deepseek-ai/dsh-session` 把 `decodeStorageRecord` 从公开导出面拿掉了（`0.1.5-rc.1`；函数仍在内部模块里，但不再从包根导出、exports map 子路径也不可达）。**
