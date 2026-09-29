@@ -15,6 +15,21 @@
 
 </div>
 
+> ### 🍴 分叉说明 —— 这是 DSH 0.2.0 适配版
+>
+> 本仓库是 `laogou0927/dsh-retrace`，fork 自
+> [`yamingmou/dsh-retrace`](https://github.com/yamingmou/dsh-retrace)（MIT，作者
+> OfferKuai）。上游 `0.4.x` 面向 DSH **0.1.5**；**本 fork 的 `0.5.0` 面向
+> DSH 0.2.0-rc.1**（会话格式 v4），同时仍兼容 0.1.x。直接从 GitHub 安装 ——
+> 不依赖本地目录、不建软连接：
+>
+> ```bash
+> dsh plugin --profile desktop add github:laogou0927/dsh-retrace
+> ```
+>
+> 0.2.0 具体破坏了什么、以及本 fork 携带的 `patches/` 依赖补丁，见
+> [兼容性与升级须知](#-兼容性与升级须知)。
+
 **撤回 / 编辑重发 / 重新生成** —— 每个会话都该有的三个操作。但回退不只是「撤掉一条
 消息」：DeepSeek Harness 把对话存在 append-only 事件日志里，撤回只回退上下文，改过的
 **产物文件不会自动还原**。dsh-retrace 把对话**和它的产物**一起版本化，并保证

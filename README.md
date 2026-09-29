@@ -16,6 +16,21 @@ DeepSeek Harness.
 
 </div>
 
+> ### 🍴 Fork notice — this is a DSH 0.2.0 port
+>
+> This repository is `laogou0927/dsh-retrace`, a fork of
+> [`yamingmou/dsh-retrace`](https://github.com/yamingmou/dsh-retrace) (MIT, by
+> OfferKuai). Upstream `0.4.x` targets DSH **0.1.5**; **this fork's `0.5.0`
+> targets DSH 0.2.0-rc.1** (session format v4) while still running on 0.1.x.
+> Install it straight from GitHub — no local checkout, no symlink:
+>
+> ```bash
+> dsh plugin --profile desktop add github:laogou0927/dsh-retrace
+> ```
+>
+> See [Compatibility & upgrade notes](#-compatibility--upgrade-notes) for what
+> 0.2.0 broke and the `patches/` dependency patch this fork carries.
+
 **Recall / edit-and-resend / regenerate** — the three moves every conversation
 deserves. But rewinding is not just "delete a message": DeepSeek Harness stores
 conversations in an append-only event log, so a recall only rewinds the context
