@@ -84,9 +84,16 @@
     "react": "^18.2.0"
   },
   "dependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-scope": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-session": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-storage": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-storage-domain": "^0.2.0-rc.1",
     "dsh-log-contract": "0.3.17",
     "zod": "^4.4.3"
   },
+  "//dependencies": "The six @deepseek-ai packages are deliberately listed BOTH here and in peerDependencies. The peers carry the host-generation gate (dsh-app-boot's evaluatePluginCompatibility reads peerDependencies only), but peers are NOT installed into a DSH profile (profiles set autoInstallPeers:false) — and this plugin statically imports foldSurface / deriveEventMessage / SESSION_FORMAT_VERSION and defineDomain / domainTable, so a registry or GitHub install would otherwise fail to load with ERR_MODULE_NOT_FOUND (a local link: install hides this, because it uses the plugin's own node_modules). cordis, dsh-scope, dsh-invariants and dsh-storage are the transitive PEER closure of dsh-session and dsh-storage-domain, which load them at module top level. All of them are pure/structural where this plugin uses them — defineDomain validates and returns the same spec object — so a second copy beside the host's is safe.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yamingmou/dsh-retrace.git"

@@ -62,6 +62,23 @@
   仍带 `import` 语句、无法编译的 `lib/dynamic-host.js`（`check-dynamic` 直接红）。
   现读取时归一化为 LF、写出也归一化，生成件字节不再随平台变化（CI 的
   "生成件是否过期"断言因此才可靠）。
+- **【发布形态·非显而易见】修好"从 GitHub/registry 安装"（不再只能本地 `link:`）**：
+  DSH profile 设了 `autoInstallPeers: false`，因此 `peerDependencies` 里的
+  `@deepseek-ai/*` **一个都不会被装进 profile**。而本插件在**模块顶层静态 import**
+  `foldSurface` / `deriveEventMessage` / `SESSION_FORMAT_VERSION` 与
+  `defineDomain` / `domainTable` ⇒ 从 GitHub 直装后**加载即失败**：
+  `ERR_MODULE_NOT_FOUND: Cannot find package '@deepseek-ai/dsh-session'`。
+  （本地 `link:` 安装看不出这个问题 —— 它用的是插件自己目录里的 node_modules。）
+  修法：把运行时真正需要的 `@deepseek-ai/dsh-session`、`@deepseek-ai/dsh-storage-domain`，
+  连同两者在**模块顶层**被 import 的 **peer 闭包**（`cordis`、`dsh-scope`、
+  `dsh-invariants`、`dsh-storage`）一并声明为 **`dependencies`**；
+  `peerDependencies` 原样保留 —— `dsh-app-boot` 的 `evaluatePluginCompatibility`
+  **只读 peerDependencies**，宿主代际闸门靠它。这些包在本插件的用法下都是纯/结构性的
+  （`defineDomain` 校验后**原样返回同一个 spec 对象**），与宿主那份并存无副作用。
+  验证方式："空目录 + profile 同款设置（`nodeLinker: hoisted` +
+  `autoInstallPeers: false`）+ tarball 安装"：修复前 `IMPORT FAIL: ERR_MODULE_NOT_FOUND`，
+  修复后 `IMPORT OK`。`package.json` 的 `"//dependencies"` 记了同一条理由，
+  防止后来者把这些依赖当冗余删掉。
 - **依赖面**：`peerDependencies` 的 `@deepseek-ai/dsh-*` 由 `^0.1.0-rc.6` 提到
   `^0.2.0-rc.1`（注意 `^0.2.0` **匹配不上** `0.2.0-rc.1` 这种预发布版）；
   `dsh-log-contract` 由 `^0.3.12` 固定为 `0.3.17`（补丁需要精确版本）；
