@@ -5,6 +5,7 @@
  * a real git binary.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { join, resolve } from 'node:path'
 import { createGitAdapter, MINIMAL_GITIGNORE } from '../lib/git-adapter.js'
 
 /** Build a fake runner with canned per-argv-prefix responses. */
@@ -100,6 +101,18 @@ describe('git adapter checkout', () => {
     expect(outcome.ok).toBe(false)
     expect(outcome.checked).toEqual([])
   })
+
+  it('matches native relative paths against Git tree paths', async () => {
+    const { command } = fakeRunner([
+      { argv: ['ls-tree', '-r', '--name-only', 'abc123', '--', 'src/a.ts'], stdout: 'src/a.ts\n' },
+      { argv: ['checkout', 'abc123', '--', 'src/a.ts'], stdout: '' },
+    ])
+    const git = createGitAdapter({ command, writeText })
+    await expect(git.checkout('/work/repo', 'abc123', [join('src', 'a.ts')])).resolves.toEqual({
+      ok: true, checked: ['src/a.ts'], skipped: [],
+    })
+    expect(command).toHaveBeenCalledWith(['checkout', 'abc123', '--', 'src/a.ts'], '/work/repo', undefined)
+  })
 })
 
 describe('git adapter init', () => {
@@ -115,7 +128,7 @@ describe('git adapter init', () => {
     const outcome = await git.init('/work/plain')
     expect(outcome.ok).toBe(true)
     expect(outcome.headHash).toBe('deadbeef')
-    expect(writeText).toHaveBeenCalledWith('/work/plain/.gitignore', MINIMAL_GITIGNORE, undefined)
+    expect(writeText).toHaveBeenCalledWith(join(resolve('/work/plain'), '.gitignore'), MINIMAL_GITIGNORE, undefined)
     expect(command.mock.calls.map(([argv]) => argv[0])).toEqual(['init', 'add', 'commit', 'rev-parse', 'update-ref'])
   })
 

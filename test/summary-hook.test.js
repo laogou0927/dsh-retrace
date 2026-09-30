@@ -121,7 +121,7 @@ describe('onBoundary — default OFF', () => {
     expect(DEFAULT_RETRACE_CONFIG.summary).toBe(false)
     seam.setConfig('session-hook', { ...DEFAULT_RETRACE_CONFIG })
     seam.onBoundary({ op: 'recall', session: fakeSession(), markerSeq: 2, span: { shadowedSeqs: [0, 1] }, newText: '' })
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await expect.poll(async () => (await readSummaries(root, 'session-hook')).records).toHaveLength(1)
     // Zero LLM cost — but the version row is still READABLE: the digest is written.
     expect(calls.count).toBe(0)
     expect(existsSync(summaryFilePath(root, 'session-hook'))).toBe(true)

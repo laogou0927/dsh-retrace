@@ -83,6 +83,6 @@ describe('护栏③ 金丝雀:真有改写 ⇒ 整轮红(证明不是摆设)', (
 
   it('金丝雀盯的就是活家表落点', () => {
     const cands = tableCandidates({ DSH_HOME: __REAL_DSH_HOME })
-    expect(cands.some((c) => c.endsWith('/dsh-retrace/codes.json'))).toBe(true)
+    expect(cands.some((c) => c.endsWith(join('dsh-retrace', 'codes.json')))).toBe(true)
   })
 })

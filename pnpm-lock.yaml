@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  dsh-log-contract@0.3.17: a9861274024fe939ea819901db5fc2a4b1327fb3e941ab4997dda8b6104273ca
+  dsh-log-contract@0.3.17: 5e1941b4fdbefa8c5c405f850e4f9e0543fe4b930f0434d4cf748f95ca7b2a76
 
 importers:
 
@@ -15,35 +15,35 @@ importers:
         specifier: ^4.0.1
         version: 4.0.4
       '@deepseek-ai/dsh-client-locale':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-conversation':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-client-ui-slots':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-invariants':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-scope':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4))
       '@deepseek-ai/dsh-session':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)))
       '@deepseek-ai/dsh-storage':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)
       '@deepseek-ai/dsh-storage-domain':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4))(@deepseek-ai/dsh-storage@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4))
       '@deepseek-ai/dsh-token-meter':
-        specifier: ^0.2.0-rc.1
+        specifier: ">=0.2.0-rc.1 <0.2.1-0"
         version: 0.2.0-rc.1(332bc3623a118cb96f908c6dd2a23c98)
       dsh-log-contract:
         specifier: 0.3.17
-        version: 0.3.17(patch_hash=a9861274024fe939ea819901db5fc2a4b1327fb3e941ab4997dda8b6104273ca)(@deepseek-ai/dsh-session@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4))))
+        version: 0.3.17(patch_hash=5e1941b4fdbefa8c5c405f850e4f9e0543fe4b930f0434d4cf748f95ca7b2a76)(@deepseek-ai/dsh-session@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4))))
       react:
         specifier: ^18.2.0
         version: 18.2.0
@@ -1201,7 +1201,7 @@ snapshots:
 
   detect-libc@2.1.2: {}
 
-  dsh-log-contract@0.3.17(patch_hash=a9861274024fe939ea819901db5fc2a4b1327fb3e941ab4997dda8b6104273ca)(@deepseek-ai/dsh-session@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)))):
+  dsh-log-contract@0.3.17(patch_hash=5e1941b4fdbefa8c5c405f850e4f9e0543fe4b930f0434d4cf748f95ca7b2a76)(@deepseek-ai/dsh-session@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)))):
     dependencies:
       '@deepseek-ai/dsh-session': 0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-scope@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)(@deepseek-ai/dsh-invariants@0.2.0-rc.1(@deepseek-ai/cordis@4.0.4)))
 

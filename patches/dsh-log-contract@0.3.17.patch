@@ -1,9 +1,3 @@
-warning: in the working copy of 'old/lib/checks.js', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'new/lib/checks.js', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'old/lib/validate.js', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'new/lib/validate.js', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'old/lib/version-support.js', LF will be replaced by CRLF the next time Git touches it
-warning: in the working copy of 'new/lib/version-support.js', LF will be replaced by CRLF the next time Git touches it
 diff --git a/lib/checks.js b/lib/checks.js
 --- a/lib/checks.js
 +++ b/lib/checks.js
@@ -119,6 +113,17 @@ diff --git a/lib/checks.js b/lib/checks.js
      }
    }
    return out;
+@@ -382,8 +424,8 @@
+-export function finalFold(events, version) {
++export function finalFold(events, version, projections = []) {
+   const fold = currentFold(version);
+   try {
+-    return { surface: fold(events) };
++    return { surface: fold(events, projections) };
+   } catch (err) {
+     return { error: err };
+   }
+ }
 diff --git a/lib/validate.js b/lib/validate.js
 --- a/lib/validate.js
 +++ b/lib/validate.js
@@ -172,3 +177,15 @@ diff --git a/lib/version-support.js b/lib/version-support.js
  });
  
  /**
+diff --git a/lib/prewrite.js b/lib/prewrite.js
+--- a/lib/prewrite.js
++++ b/lib/prewrite.js
+@@ -121,7 +121,7 @@
+     violations.push(...replay.violations);
+     // S8 —— fold 终验（按当前文件版本选：v3 官方 foldSurface / v0–v2 本地 legacyFoldSurface）
+-    const folded = finalFold(candidateEvents, formatVersion);
++    const folded = finalFold(candidateEvents, formatVersion, input.projections ?? []);
+     if (folded.error) {
+       violations.push(violation('S8', { lineNo: null }, `foldSurface 重放失败（按文件版本选：v3 官方 / v0–v2 本地等价）：${folded.error.message} —— 会话加载会被拒（SessionPersistenceCorruptionError）`));
+     }
+     // W1/W2 —— wire 流配对（2026-09-09 V3 验证补：离线 check 有、写前原漏——悬空 tool

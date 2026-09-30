@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { join } from 'node:path'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const read = (p) => readFileSync(join(ROOT, p), 'utf8')
+const read = (p) => readFileSync(join(ROOT, p), 'utf8').replace(/\r\n/g, '\n')
 const all = (src, re) => [...src.matchAll(re)].map((m) => m[1])
 
 /** 客户端 op：字面量 `callOp('X')` + 动态 `callOp(op, …)`（op 由 recall/edit/regenerate 传入）。 */

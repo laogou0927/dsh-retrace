@@ -1,14 +1,15 @@
 {
   "name": "dsh-retrace",
   "description": "Retrace · 回溯 — Recall, edit-and-resend, regenerate, and conversation/artifact versioning (timeline, rollback, fork map) for DeepSeek Harness — Web and Desktop",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "packageManager": "pnpm@11.7.0",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "scripts": {
-    "build": "node scripts/generate-dynamic.mjs && node scripts/build-client.mjs",
-    "check": "node scripts/check-syntax.mjs && node scripts/check-dynamic.mjs && node scripts/check-host-contract.mjs",
+    "build": "node scripts/build-contract.mjs && node scripts/generate-dynamic.mjs && node scripts/build-client.mjs",
+    "check:contract": "node scripts/build-contract.mjs --check",
+    "check": "node scripts/build-contract.mjs --check && node scripts/check-syntax.mjs && node scripts/check-dynamic.mjs && node scripts/check-host-contract.mjs",
     "test": "vitest run",
     "prepublishOnly": "node scripts/check-pkg-meta.mjs && pnpm check && pnpm build && pnpm test"
   },
@@ -75,25 +76,22 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-client-locale": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-conversation": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-client-ui-slots": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-session": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-storage-domain": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-token-meter": "^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-locale": ">=0.2.0-rc.1 <0.2.1-0",
+    "@deepseek-ai/dsh-client-ui-conversation": ">=0.2.0-rc.1 <0.2.1-0",
+    "@deepseek-ai/dsh-client-ui-slots": ">=0.2.0-rc.1 <0.2.1-0",
+    "@deepseek-ai/dsh-invariants": ">=0.2.0-rc.1 <0.2.1-0",
+    "@deepseek-ai/dsh-scope": ">=0.2.0-rc.1 <0.2.1-0",
+    "@deepseek-ai/dsh-session": ">=0.2.0-rc.1 <0.2.1-0",
+    "@deepseek-ai/dsh-storage": ">=0.2.0-rc.1 <0.2.1-0",
+    "@deepseek-ai/dsh-storage-domain": ">=0.2.0-rc.1 <0.2.1-0",
+    "@deepseek-ai/dsh-token-meter": ">=0.2.0-rc.1 <0.2.1-0",
     "react": "^18.2.0"
   },
   "dependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/dsh-invariants": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-scope": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-session": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-storage": "^0.2.0-rc.1",
-    "@deepseek-ai/dsh-storage-domain": "^0.2.0-rc.1",
     "dsh-log-contract": "0.3.17",
     "zod": "^4.4.3"
   },
-  "//dependencies": "The six @deepseek-ai packages are deliberately listed BOTH here and in peerDependencies. The peers carry the host-generation gate (dsh-app-boot's evaluatePluginCompatibility reads peerDependencies only), but peers are NOT installed into a DSH profile (profiles set autoInstallPeers:false) — and this plugin statically imports foldSurface / deriveEventMessage / SESSION_FORMAT_VERSION and defineDomain / domainTable, so a registry or GitHub install would otherwise fail to load with ERR_MODULE_NOT_FOUND (a local link: install hides this, because it uses the plugin's own node_modules). cordis, dsh-scope, dsh-invariants and dsh-storage are the transitive PEER closure of dsh-session and dsh-storage-domain, which load them at module top level. All of them are pure/structural where this plugin uses them — defineDomain validates and returns the same spec object — so a second copy beside the host's is safe.",
+  "//dependencies": "Host packages belong only in peerDependencies: dsh-app-boot's profile-resolution-bootstrap routes declared peers to the installation's runtime. Keep official foldSurface / deriveEventMessage / SESSION_FORMAT_VERSION and storage-domain imports; a bare Node import outside DSH does not exercise this resolver. The v4 pre-write contract is shipped in lib/vendor/dsh-log-contract.js, built from the patched dependency, because a consuming profile does not inherit this workspace's patchedDependencies.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/yamingmou/dsh-retrace.git"

@@ -254,7 +254,6 @@ function readHost(reader, hostPath) {
 const SESSION = '/node_modules/@deepseek-ai/dsh-session/lib/index.js'
 const SESSION_TYPES = '/node_modules/@deepseek-ai/dsh-session/lib/types/index.js'
 const DSH_AGENT = '/node_modules/@deepseek-ai/dsh-agent/lib/index.js'
-const INBOX = '/node_modules/@deepseek-ai/dsh-agent/lib/types/inbox.js'
 const AGENT_LOOP = '/node_modules/@deepseek-ai/dsh-agent-loop/lib/index.js'
 const TOKEN_METER = '/node_modules/@deepseek-ai/dsh-token-meter/lib/index.js'
 const SESSION_TITLE = '/node_modules/@deepseek-ai/dsh-session-title/lib/index.js'
@@ -343,13 +342,15 @@ const CHECKS = [
   { kind: 'present', id: 'agent.cancel', file: AGENT_LOOP, re: /^\s+cancel\(cause/m, what: 'Agent.cancel(cause)', usedBy: 'lib/host-core.js:203' },
   { kind: 'present', id: 'agent.whenIdle', file: AGENT_LOOP, re: /^\s+async whenIdle\(\)/m, what: 'Agent.whenIdle()', usedBy: 'lib/host-core.js:204' },
   { kind: 'present', id: 'agent.inbox', file: AGENT_LOOP, re: /^\s+inbox;/m, what: 'Agent.inbox field', usedBy: 'lib/close-guard.js:39-47 (hasPending/nextTurn/nextStep)' },
-  // Inbox is asserted in BOTH locations on purpose (review INFO-1): the types file
-  // is the parallel declaration, while the RUNTIME object is ReactLoopInbox in
-  // dsh-agent-loop (this.inbox = new ReactLoopInbox(...)). They agree today; pin
-  // both so a rename in either place fails loudly.
-  { kind: 'present', id: 'inbox.hasPending', file: INBOX, re: /get hasPending\(\)/, what: 'Inbox.hasPending (declared type)', usedBy: 'lib/close-guard.js:42' },
-  { kind: 'present', id: 'inbox.nextTurn', file: INBOX, re: /get nextTurn\(\)/, what: 'Inbox.nextTurn (declared type)', usedBy: 'lib/close-guard.js:44' },
-  { kind: 'present', id: 'inbox.nextStep', file: INBOX, re: /get nextStep\(\)/, what: 'Inbox.nextStep (declared type)', usedBy: 'lib/close-guard.js:45' },
+  // 0.2.0-rc.2 DROPPED the parallel type declaration that used to live in
+  // `@deepseek-ai/dsh-agent/lib/types/inbox.js`: that file no longer exists, and
+  // no `.d.ts` anywhere in the app still declares hasPending / nextTurn /
+  // nextStep (verified by scanning every .d.ts in the asar). The RUNTIME object
+  // is unchanged — ReactLoopInbox in dsh-agent-loop
+  // (`this.inbox = new ReactLoopInbox(...)`) — and that is what
+  // lib/close-guard.js actually reads. The runtime pins below are therefore the
+  // real contract; the former type-file pins were removed as obsolete, because
+  // they asserted a published declaration rather than behaviour the plugin uses.
   { kind: 'present', id: 'agentLoopInbox.hasPending', file: AGENT_LOOP, re: /get hasPending\(\)/, what: 'ReactLoopInbox.hasPending (runtime object)', usedBy: 'lib/close-guard.js:42' },
   { kind: 'present', id: 'agentLoopInbox.nextTurn', file: AGENT_LOOP, re: /get nextTurn\(\)/, what: 'ReactLoopInbox.nextTurn (runtime object)', usedBy: 'lib/close-guard.js:44' },
   { kind: 'present', id: 'agentLoopInbox.nextStep', file: AGENT_LOOP, re: /get nextStep\(\)/, what: 'ReactLoopInbox.nextStep (runtime object)', usedBy: 'lib/close-guard.js:45' },

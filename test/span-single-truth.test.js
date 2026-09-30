@@ -35,7 +35,7 @@ const SINGLE_TRUTH = 'lib/span-semantics.js'
  */
 const CARRIER_TRUTH = 'lib/marker-carrier.js'
 /** 生成件(源码的副本/打包产物):内容是派生的,排除出结构断言。 */
-const GENERATED = /(^|\/)(dynamic-host|dynamic-client|client\.bundle)\.js$/
+const GENERATED = /(^|\/)(dynamic-host|dynamic-client|client\.bundle|vendor\/dsh-log-contract)\.js$/
 
 /** 禁用形态:**形态**判据(见文件头局限说明)。 */
 const BANS = [
@@ -161,10 +161,11 @@ describe('单一真相(第 2 项)· 结构断言:轮首回退/尾部切片只有
 
   it('豁免集合只含生成件(生成件的同源由 test/generated.test.js 保证)', () => {
     expect(CARRIER_TRUTH).toBe('lib/marker-carrier.js') // 第二份"唯一真相"也是源码,不是生成件
-    for (const rel of ['lib/dynamic-host.js', 'lib/dynamic-client.js', 'lib/client.bundle.js']) {
+    for (const rel of ['lib/dynamic-host.js', 'lib/dynamic-client.js', 'lib/client.bundle.js', 'lib/vendor/dsh-log-contract.js']) {
       expect(GENERATED.test(rel)).toBe(true)
       expect(existsSync(join(root, rel))).toBe(true)
     }
     expect(existsSync(join(root, 'test/generated.test.js'))).toBe(true)
+    expect(existsSync(join(root, 'scripts/build-contract.mjs'))).toBe(true)
   })
 })

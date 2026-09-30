@@ -204,7 +204,7 @@ describe('createMarkerGuard (fake prewriter)', () => {
     const guard = createMarkerGuard({ prewriterFactory: factory })
     await expect(guard.validateMarkerAppend({ id: 's1', events: [] }, validEnvelope())).resolves.toEqual({ t1Ok: true })
     // 2026-09-14：显式传 header（版本单一真相）；缺 header 时由契约按形状推断。
-    expect(factory).toHaveBeenCalledWith({ events: [], header: null })
+    expect(factory).toHaveBeenCalledWith({ events: [], header: null, projections: [] })
   })
 
   it('把会话 header 传给契约（dsh-log-contract ≥0.3.13 的格式版本单一真相）', async () => {
@@ -216,7 +216,7 @@ describe('createMarkerGuard (fake prewriter)', () => {
     const header = { version: 3, id: 's1', createdAt: 1, isSeeded: false }
     await expect(guard.validateMarkerAppend({ id: 's1', events: [], header }, validEnvelope()))
       .resolves.toEqual({ t1Ok: true })
-    expect(factory).toHaveBeenCalledWith({ events: [], header })
+    expect(factory).toHaveBeenCalledWith({ events: [], header, projections: [] })
   })
 
   it('throws marker-rejected on error-level violations', async () => {

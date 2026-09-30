@@ -47,8 +47,8 @@ const CLAIM_RE = /保证|确保|guarantee|绝不|恒通过|必须|不会|禁止|
 const CLAIM_DECLARED = [
   { file: 'lib/span-semantics.js', fragment: '两种模式共用同一条轮首回退规则' },
 ]
-/** 生成件不算声称源(dynamic-* 是 host-core 的副本;client.bundle 是打包产物)。 */
-const SKIP = /(^|\/)(dynamic-(host|client)\.js|client\.bundle\.js)$/
+/** 生成件不算声称源；vendor 的同源由 build-contract.mjs --check 验证。 */
+const SKIP = /(^|\/)(dynamic-(host|client)\.js|client\.bundle\.js|vendor\/dsh-log-contract\.js)$/
 
 function listLibFiles() {
   const files = []

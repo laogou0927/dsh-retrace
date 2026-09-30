@@ -57,7 +57,7 @@ function mkSession(home, base, ws, sid, name, mtimeMs = T0) {
 describe('sessionRoots / activeSessionsRoot', () => {
   it('候选顺序:$DSH_HOME 优先,新基座次之,旧 home 兜底(有序去重)', () => {
     expect(sessionRoots({ home: '/H', dshHome: '/X' })).toEqual([
-      '/X/sessions',
+      join('/X', 'sessions'),
       join('/H', 'dsh-v3', 'sessions'),
       join('/H', '.dsh', 'sessions'),
     ])
@@ -250,9 +250,9 @@ describe('badgeTableCandidates / resolveBadgeTablePath', () => {
 describe('pluginDataHome(插件数据家:与会话基座同源)', () => {
   it('① DSH_HOME 设了 → 逐字用它(含 ~ 展开/resolve,与官方 resolveDshHome 的 env 分支一致)', () => {
     // 向后兼容:设了 env 时行为与改前(官方 resolveDshHome)**逐字一致**。
-    expect(pluginDataHome({ home: '/H', dshHome: '/X' })).toBe('/X')
+    expect(pluginDataHome({ home: '/H', dshHome: '/X' })).toBe(resolve('/X'))
     // 目录不存在也照样返回(官方同样不检查存在性)
-    expect(pluginDataHome({ home: '/H', dshHome: join('/no', 'such', 'home') })).toBe('/no/such/home')
+    expect(pluginDataHome({ home: '/H', dshHome: join('/no', 'such', 'home') })).toBe(resolve('/no', 'such', 'home'))
     // ~ / 相对路径规范化 = 官方 expandHomePath + resolve
     expect(pluginDataHome({ home: '/H', dshHome: '~/x' })).toBe(join(homedir(), 'x'))
     expect(pluginDataHome({ home: '/H', dshHome: '~' })).toBe(resolve(homedir()))
@@ -261,7 +261,7 @@ describe('pluginDataHome(插件数据家:与会话基座同源)', () => {
     const home = tmpRoot()
     mkSession(home, 'dsh-v3', '--w--', 'v3one', V3)
     mkSession(home, '.dsh', '--w--', 'old1', V0)
-    expect(pluginDataHome({ home, dshHome: '/X' })).toBe('/X')
+    expect(pluginDataHome({ home, dshHome: '/X' })).toBe(resolve('/X'))
   })
 
   it('② 未设 DSH_HOME 且两基座都在 → 数据家 = 会话基座(~/{dsh-v3}),不再分裂到旧 home', () => {
@@ -307,7 +307,7 @@ describe('pluginDataHome(插件数据家:与会话基座同源)', () => {
     const prev = process.env.DSH_HOME
     try {
       process.env.DSH_HOME = '/env/home'
-      expect(pluginDataHome({ home: '/H' })).toBe('/env/home')
+      expect(pluginDataHome({ home: '/H' })).toBe(resolve('/env/home'))
       process.env.DSH_HOME = '   '
       expect(pluginDataHome({ home: '/H' })).toBe(join('/H', '.dsh'))
     } finally {

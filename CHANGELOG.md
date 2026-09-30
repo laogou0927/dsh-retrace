@@ -1,3 +1,44 @@
+### 0.5.1(2026-09-30 · 发布形态修复：宿主包只声明 peer + 随包内置 v4 校验器)
+
+> `0.5.0` 把 6 个 `@deepseek-ai/*` 声明成了 **`dependencies`**，并依赖"profile 会应用插件的
+> `patchedDependencies`"——这两条**都是错的**，导致从 GitHub 安装后 profile 里多出一整套与
+> 桌面端不匹配的核心运行时（实测 278 个冲突包），且写前守卫在 v4 会话上失效。本版修掉。
+
+- **【我方缺陷】宿主包改为只声明 `peerDependencies`，从 `dependencies` 移除**：
+  DSH 的 profile 解析器（`@deepseek-ai/dsh-app-boot` 的
+  `lib/worker/profile-resolution-bootstrap.js`，自述 "in-memory profile package routing for
+  Node's default ESM and CommonJS loaders"）对**在 `peerDependencies` 里声明了核心包的包**，
+  会把该 import 路由到**安装目录（asar 运行时）**的副本（`readPeerNames()` 只读
+  `peerDependencies`；`routeScoped()` 允许 `scope === "installation"` 的目标）。
+  声明成 `dependencies` 则会让 pnpm 在 profile 里再装一套 ⇒ 与桌面端运行时冲突。
+  `dependencies` 现在只剩 `dsh-log-contract` + `zod`。
+- **【我方缺陷】peer 范围改用 `>=0.2.0-rc.1 <0.2.1-0`**：原 `^0.2.0-rc.1` 还会匹配
+  `0.2.0` 正式版与 `0.2.1+`，而该代际模型里不存在这些版本。
+- **【我方缺陷】随包内置 v4 契约校验器，profile 不再需要任何补丁配置**：
+  pnpm 只应用**根工程**的 `patchedDependencies`，而 profile 才是根 ⇒ 插件自带的补丁在
+  profile 里**从不生效**，守卫实际是 v3-only（对宿主自己写的 v4 事件报几百条 error，
+  要么拦死每次落盘、要么退化为仅告警 = 写前校验形同虚设）。
+  现在 `scripts/build-contract.mjs` 把**打过补丁的** `dsh-log-contract@0.3.17` 打成
+  `lib/vendor/dsh-log-contract.js`（宿主 import 保持 external，交由上面的解析器提供），
+  接进 `build` 与 `check`，构建前校验补丁标记、`--check` 校验产物是否过期。
+  补丁相应扩展为 `finalFold(events, version, projections = [])`，写前守卫新增传入
+  `session.surface.projections` —— v4 的 `image/offload` 折叠需要它。
+- **【宿主侧变更·非本插件缺陷】rc.2 删掉了 Inbox 的类型声明**：
+  `@deepseek-ai/dsh-agent/lib/types/inbox.js` 已不存在，全 asar 的 `.d.ts` 也搜不到
+  `hasPending`/`nextTurn`/`nextStep`；但运行时对象仍在 `dsh-agent-loop` 里
+  （`lib/close-guard.js` 读的正是它）。故契约闸门移除 3 条**类型文件**断言、
+  保留 3 条**运行时**断言。
+- **【宿主侧变更·非本插件缺陷】rc.2 把自定义 Turn/Step 节点收进可折叠的分析体**：
+  客户端 `user-actions` 行原本落在 Turn 内会被一起折叠；现改为发布在 Session 层
+  （`location: { kind: 'session' }`），保持贴在用户气泡旁。
+- **【我方缺陷】Windows 路径**：`git-adapter` 用 `relative()` 得到的是 `\` 分隔，
+  而 git tree 条目固定用 `/` ⇒ 校验/检出会静默跳过，现按 `sep` 归一化。
+- **验证**：宿主契约闸门 **85/85**（对 rc.2 实装 asar）；`check-syntax` 42/42；
+  `check-dynamic` 通过；测试 **993/993 全绿**（顺带修掉此前 13 条 Windows/环境既有失败，
+  修法是让断言与路径分隔符无关、CRLF 归一化、用 `expect.poll` 替掉固定 sleep，
+  并新增一条 Windows 路径回归用例，**未放宽任何断言**）；
+  插件在**运行中的 DSH 内已激活**：`GET /api/plugins/retrace/runningState` 返回真实数据。
+
 ### 0.5.0(2026-09-29 · DSH 0.2.0 适配版 —— 会话格式 v3→v4)
 
 > **面向宿主 `@deepseek-ai/dsh-session@0.2.0-rc.1`**（`SESSION_FORMAT_VERSION = 4`）。

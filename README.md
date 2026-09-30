@@ -20,8 +20,14 @@ DeepSeek Harness.
 >
 > This repository is `laogou0927/dsh-retrace`, a fork of
 > [`yamingmou/dsh-retrace`](https://github.com/yamingmou/dsh-retrace) (MIT, by
-> OfferKuai). Upstream `0.4.x` targets DSH **0.1.5**; **this fork's `0.5.0`
-> targets DSH 0.2.0-rc.1** (session format v4) while still running on 0.1.x.
+> OfferKuai). Upstream `0.4.x` targets DSH **0.1.5**; **this fork's `0.5.x`
+> targets DSH 0.2.0** (session format v4; peer range `>=0.2.0-rc.1 <0.2.1-0`).
+>
+> Host packages are declared only as peers and resolved by DSH's runtime loader.
+> The published plugin includes its patched v4 pre-write contract; profiles need
+> no `patchedDependencies`. Core session folding still uses the official host
+> implementation. A bare Node import outside DSH does not test plugin loading;
+> check activation logs and `/api/plugins/retrace/*` inside the running host.
 > Install it straight from GitHub — no local checkout, no symlink:
 >
 > ```bash

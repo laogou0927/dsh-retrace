@@ -100,6 +100,6 @@ describe('references', () => {
 describe('objectPath', () => {
   it('addresses content by sha prefix buckets', () => {
     const sha = 'a'.repeat(64)
-    expect(objectPath('/root', sha)).toBe('/root/objects/aa/' + sha)
+    expect(objectPath('/root', sha)).toBe(join('/root', 'objects', 'aa', sha))
   })
 })

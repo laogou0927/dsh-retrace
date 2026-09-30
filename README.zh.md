@@ -19,8 +19,15 @@
 >
 > 本仓库是 `laogou0927/dsh-retrace`，fork 自
 > [`yamingmou/dsh-retrace`](https://github.com/yamingmou/dsh-retrace)（MIT，作者
-> OfferKuai）。上游 `0.4.x` 面向 DSH **0.1.5**；**本 fork 的 `0.5.0` 面向
-> DSH 0.2.0-rc.1**（会话格式 v4），同时仍兼容 0.1.x。直接从 GitHub 安装 ——
+> OfferKuai）。上游 `0.4.x` 面向 DSH **0.1.5**；**本 fork 的 `0.5.x` 面向
+> DSH 0.2.0**（会话格式 v4；peer 范围 `>=0.2.0-rc.1 <0.2.1-0`）。
+>
+> 宿主包只声明为 peer，由 DSH 的运行时解析器提供。发布包内置带 v4 补丁的写前
+> 契约校验器，profile 无需配置 `patchedDependencies`；核心折叠仍调用宿主的官方
+> 实现。宿主外的裸 Node import 不能验证插件加载，应在运行中的 DSH 内检查激活日志
+> 和 `/api/plugins/retrace/*` 路由。
+>
+> 直接从 GitHub 安装 ——
 > 不依赖本地目录、不建软连接：
 >
 > ```bash

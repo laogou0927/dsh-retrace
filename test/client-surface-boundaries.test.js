@@ -305,7 +305,7 @@ describe('关闭守卫是 DOM 装配（非 React）⇒ 装配失败必须降级�
   })
 
   it('源码守卫：关守卫的装配被 try/catch 包着（失败降级，不炸 apply）', () => {
-    const source = readFileSync(CLIENT_SOURCE_PATH, 'utf8')
+    const source = readFileSync(CLIENT_SOURCE_PATH, 'utf8').replace(/\r\n/g, '\n')
     expect(source).toContain('try {\n    disposeCloseGuard = installCloseGuard(t)\n  } catch (error) {')
     expect(source).toContain('close guard unavailable')
   })
