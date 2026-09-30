@@ -368,6 +368,70 @@ describe('useMarkerHidePlan — per-marker hide plan + snapshot memo', () => {
     expect(plan.unionRatio).toBeCloseTo(26 / 30, 5)
   })
 
+  it('hides streamed reasoning and replies by durable final seq, preserving retained steps', () => {
+    const recalled = { ...assistantStep('streamed', 'reply', 80), anchorSeq: 22 }
+    const retained = { ...assistantStep('retained', 'other-reply', 81), anchorSeq: 23 }
+    const call = { ...toolCall('call', 79), anchorSeq: 30 }
+    const plan = hooks.useMarkerHidePlan(useChatFor(chatSnapshot([recalled, retained, call, marker('undo', 90, [79, 80])])))
+    expect(plan.hiddenFor('undo')).toEqual(['streamed', 'call'])
+    expect(hooks.useMessageSeq(useChatFor(chatSnapshot([recalled])), 'reply')).toBe(80)
+  })
+
+  it('removes earlier notices and their discarded content when a later recall removes that history', () => {
+    const oldRows = mapSeqs(1, 24).map((seq) => userMessage(`old${seq}`, seq))
+    const first = marker('first-edit', 30, mapSeqs(1, 24), { op: 'edit' })
+    const second = marker('second-edit', 32, [30, 31], { op: 'edit' })
+    const undo = marker('undo', 35, [32, 33])
+    const plan = hooks.useMarkerHidePlan(useChatFor(chatSnapshot([
+      ...oldRows, first, userMessage('resend1', 31), second, userMessage('resend2', 33), undo,
+      userMessage('retained', 40),
+    ])))
+    expect(plan.planFor('first-edit').degraded).toBe(true)
+    expect(plan.hiddenFor('undo')).toEqual(expect.arrayContaining([
+      ...oldRows.map((row) => row.key), 'first-edit', 'second-edit', 'resend1', 'resend2',
+    ]))
+    expect(plan.hiddenFor('undo')).not.toContain('undo')
+    expect(plan.hiddenFor('undo')).not.toContain('retained')
+  })
+
+  it('keeps legacy and compact history outside transitive recall hiding', () => {
+    const plan = hooks.useMarkerHidePlan(useChatFor(chatSnapshot([
+      userMessage('legacy-content', 1), userMessage('compact-content', 2),
+      marker('legacy', 10, [1], { legacy: true }),
+      marker('compact', 11, [2], { compact: true }),
+      marker('undo', 12, [10, 11]),
+    ])))
+    expect(plan.hiddenFor('undo')).not.toContain('legacy-content')
+    expect(plan.hiddenFor('undo')).not.toContain('compact-content')
+  })
+
+  it('hides a removed Turn disclosure without hiding one that still owns a retained message', () => {
+    const atTurn = (node, turn) => ({ ...node, location: { kind: 'turn', turn: { turn } } })
+    const process = (key, turn) => ({ key, kind: 'turn-process', anchorSeq: turn + 0.1, data: { turn } })
+    const plan = hooks.useMarkerHidePlan(useChatFor(chatSnapshot([
+      atTurn(assistantStep('removed', 'r1', 80), 1), process('removed-process', 1),
+      atTurn(assistantStep('removed-part', 'r2', 81), 2),
+      atTurn(assistantStep('retained-part', 'r3', 82), 2), process('retained-process', 2),
+      marker('undo', 90, [80, 81]),
+    ])))
+    expect(plan.hiddenFor('undo')).toContain('removed-process')
+    expect(plan.hiddenFor('undo')).not.toContain('retained-process')
+  })
+
+  it('uses the union of live hiding rules for process group headers, excluding degraded edits', () => {
+    const plan = hooks.useMarkerHidePlan(useChatFor(chatSnapshot([
+      ...mapSeqs(1, 30).map((seq) => userMessage(`u${seq}`, seq)),
+      marker('first', 40, [1]), marker('second', 41, [2]),
+      marker('degraded', 42, mapSeqs(3, 27), { op: 'edit' }),
+    ])))
+    const css = plan.groupCssFor('first')
+    expect(css).toContain('[data-chat-node-key="u1"]')
+    expect(css).toContain('[data-chat-node-key="u2"]')
+    expect(css).not.toContain('[data-chat-node-key="u3"]')
+    expect(plan.groupCssFor('second')).toBe(null)
+    expect(plan.groupCssFor('degraded')).toBe(null)
+  })
+
   it('excludes compact markers from the marker table', () => {
     const snap = chatSnapshot([
       userMessage('u1', 5),
@@ -648,6 +712,18 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     const legacy = marker('m1', 6, [5], { legacy: true })
     const element = RecallMarkerRow({ node: legacy, useChat: useChatFor(chatSnapshot([userMessage('u1', 5), legacy])), t })
     expect(collect(element).filter((node) => node.type === 'style')).toHaveLength(0)
+  })
+
+  it('checkpoint restore hides the complete replaced tail silently, including large restores', () => {
+    const RecallMarkerRow = findComponent('conversation.chat.node', 'recall-marker')
+    const node = marker('restore-clear', 100, mapSeqs(1, 25), { op: 'restore' })
+    const snap = chatSnapshot([...mapSeqs(1, 25).map((seq) => userMessage(`u${seq}`, seq)), node])
+    const element = RecallMarkerRow({ node, useChat: useChatFor(snap), t })
+    expect(hooks.useMarkerHidePlan(useChatFor(snap)).planFor(node.key).degraded).toBe(false)
+    const rendered = collect(element)
+    expect(rendered.filter((item) => item.type === 'style')).toHaveLength(1)
+    expect(rendered.some((item) => item.props.role === 'status')).toBe(false)
+    expect(rendered.some((item) => item.children.includes('marker.edit'))).toBe(false)
   })
 
   it('the full-history preference still shows recalled rows and can turn their hiding back on', () => {
@@ -1636,6 +1712,26 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(hasClass(element, 'dsh-rt-modal-files')).toBe(false)
   })
 
+  it('操作前存档说明恢复完整对话；一致时禁用确认，文件单独变化仍可恢复', () => {
+    const props = { scope: 'both', setScope() {}, busy: false, t: tZh, onConfirm() {}, onCancel() {} }
+    const preview = { kind: 'recall', data: { semantics: 'before-operation', context: { changed: true, messages: 4, targetMessages: 4 }, artifacts: { rows: [] } } }
+    const modal = hooks.PreviewBox({ ...props, preview })
+    expect(textOf(modal)).toContain('将恢复完整对话（4 条消息）')
+    expect(textOf(modal)).not.toContain(tZh('timeline.messagesRemoved', { count: 4 }))
+    const confirm = (element) => collect(element).find((e) => e.type === 'button' && String(e.props.className).includes('dsh-rt-confirm'))
+    preview.data.context.changed = false
+    preview.data.context.messages = 0
+    expect(confirm(hooks.PreviewBox({ ...props, preview })).props.disabled).toBe(true)
+    preview.data.artifacts.rows = [{ path: 'test.txt', action: 'restore' }]
+    expect(confirm(hooks.PreviewBox({ ...props, preview })).props.disabled).toBe(false)
+    expect(confirm(hooks.PreviewBox({ ...props, preview, scope: 'context' })).props.disabled).toBe(true)
+  })
+
+  it('操作前存档的行尾只有恢复操作前的内容一个动作', () => {
+    const element = hooks.CheckpointRow({ row: { kind: 'fallback', record: { beforeOperation: true, kind: 'input', createdAt: 0, messageCount: 0 } }, top: 0, t: tZh, onPreview() {}, onJump() {} })
+    expect(collect(element).filter((e) => e.type === 'button').map((e) => textOf(e))).toEqual(['恢复操作前的内容'])
+  })
+
   it('keeps a partial file rollback visible and requires a refreshed preview before retry', () => {
     const preview = {
       versionId: 'v9', kind: 'edit', boundarySeq: 3, contextOnly: false,
@@ -2184,14 +2280,14 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     expect(textOf(richRow())).toContain('原来的内容')
   })
 
-  it('给人读·行尾只剩两个语义清楚的动作：跳转（纯导航）与 回到这一档（回退）', () => {
+  it('给人读·行尾只剩两个语义清楚的动作：跳转（纯导航）与 恢复操作前的内容', () => {
     const element = richRow()
     const actions = collect(element).find((el) => String(el.props.className ?? '').includes('dsh-rt-version-actions'))
     expect(actions).toBeDefined()
     const buttons = collect(actions).filter((el) => el.type === 'button')
     expect(buttons.map((el) => allText(el).join(''))).toEqual([tZh('timeline.restoreTo'), tZh('timeline.jump')])
     // 两者文案必须一眼能分清（不同词、不是近义词）
-    expect(tZh('timeline.restoreTo')).toBe('回到这一档')
+    expect(tZh('timeline.restoreTo')).toBe('恢复操作前的内容')
     expect(tZh('timeline.jump')).toBe('跳转')
     expect(tZh('timeline.restoreTo')).not.toBe(tZh('timeline.jump'))
     // 行里不再出现「明细」这一类中间入口

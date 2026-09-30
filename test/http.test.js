@@ -717,6 +717,15 @@ describe('GET /activities', () => {
   })
 })
 
+it('serves the pre-operation checkpoint service instead of the old after-operation projection', async () => {
+  const seam = makeSeam(), snapshot = vi.fn(async () => ({ enabled: true, semantics: 'before-operation', versions: [{ versionId: 'cp-1', kind: 'input' }] }))
+  const handler = createRetraceHttpHandler({}, { sessions: {}, agents: {}, seam, checkpoints: { snapshot } })
+  const response = await get(handler, `${ROUTE_PREFIX}/checkpoints?sessionId=s1`)
+  expect(JSON.parse(response.body).value.semantics).toBe('before-operation')
+  expect(snapshot).toHaveBeenCalledWith('s1')
+  expect(seam.snapshot).not.toHaveBeenCalled()
+})
+
 describe('GET /summaries', () => {
   const makeSummarySeam = (root, { enabled = true } = {}) => {
     pretendCalls(0)

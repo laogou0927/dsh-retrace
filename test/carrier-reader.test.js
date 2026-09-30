@@ -116,6 +116,26 @@ describe('读端兜底 · 四情形(顶层 provenance 完整 / 截断 / 整条�
   })
 })
 
+describe('checkpoint restore tail clearing', () => {
+  const clear = {
+    seq: 7, type: 'system/message',
+    data: { turn: 2, step: 2, message: { role: 'system', id: 'restore-empty-0df0f3f6-df2f-44ae-ae7c-fb650e4dc614', content: [], source: { kind: 'system-prompt' } } },
+    surfaceOp: { op: 'replace', startSeq: 3, endSeq: 5 }, sourceEventSeqs: [6, 3, 4, 5],
+  }
+  it('recognizes native restore replacements and uses their exact replaced message seqs', () => {
+    expect(__recallMarkerDefinition.match(clear)?.role).toBe('start')
+    expect(clientStateOf(clear)).toMatchObject({ op: 'restore', legacy: false, compact: false, shadowedSeqs: [3, 4, 5] })
+    const stripped = { ...clear, sourceEventSeqs: undefined }
+    const audit = { seq: 6, type: 'compaction/prune', data: { shadowedRange: { start: 3, end: 5 }, shadowedSeqs: [3, 4, 5], shadowedTokenCount: 10 } }
+    expect(clientStateOf(stripped, previousOnly(audit)).shadowedSeqs).toEqual([3, 4, 5])
+  })
+  it('does not hide ordinary or appended system messages', () => {
+    expect(__recallMarkerDefinition.match({ ...clear, surfaceOp: 'append' })).toBe(null)
+    expect(__recallMarkerDefinition.match({ ...clear, data: { ...clear.data, message: { ...clear.data.message, id: 'ordinary-system-prompt' } } })).toBe(null)
+    expect(__recallMarkerDefinition.match({ ...clear, data: { ...clear.data, message: { ...clear.data.message, content: [{ type: 'text', text: 'real system prompt' }] } } })).toBe(null)
+  })
+})
+
 describe('回归守卫(防兜底再次被悄悄删掉)', () => {
   it('client 产物里注册了审计上下文定义;载体仍被识别为我方 marker', async () => {
     const { carrier } = await writeCarrier()

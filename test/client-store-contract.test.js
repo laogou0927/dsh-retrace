@@ -385,7 +385,7 @@ describe('client source guard: checkpoints copy + summary switch + digest render
   it('the checkpoint tab name and concept sentence are the approved wording', () => {
     expect(zh['timeline.title']).toBe('读档点')
     expect(zh['view.retrace']).toBe('读档点')
-    expect(zh['timeline.intro']).toBe('这里是你会话的改动记录：每次撤回 / 编辑 / 重新生成前，原来的内容都会存一档（共 {count} 次）。点任一条可展开看当时的原话。')
+    expect(zh['timeline.intro']).toBe('输入、撤回、编辑、重新生成和恢复前都会存档（共 {count} 个）。选择“恢复操作前的内容”可找回当时的状态；恢复前也会自动存档。')
   })
 
   it('the retired fork view and its data channel are gone', () => {

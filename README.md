@@ -143,6 +143,13 @@ it cannot dirty the log, and new markers create **no token-meter pairing debt**
 
 ---
 
+### Checkpoints: restore pre-operation content
+
+Normal input (including pause input), recall, edit-and-resend, regenerate, file undo and restore save a checkpoint **before** changing content.
+The single checkpoint action restores that complete conversation and, when selected, its matching file preimages. Restoring first saves the current state, so A+B → recall B → A → restore → A+B can be reversed back to A using the new “Before restore” checkpoint.
+Preview, cancellation, rejection and no-op restores do not create checkpoints. Restoring historical replies, tool results and attachment references does not call the model or execute tools again.
+Pre-operation file capture retains the existing UTF-8 capture bounds (1 MiB per file, 8 MiB / 5000 entries / 5 seconds per scan); unsupported or unverified files are skipped with reasons. Older checkpoints can recover conversation preimages from the immutable log, but their after-operation file snapshots cannot be used as before-operation snapshots.
+
 ## ⚡ One-minute install
 
 > Requires DeepSeek Harness with the `dsh` CLI. **Restart DSH after install** (a running app does not hot-reload).
@@ -188,9 +195,9 @@ Full steps in [📦 Installation](#-installation).
 
 | | What | |
 |---|---|---|
-| 🕘 | **Timeline** | a **Versions** tab in the conversation view: every version (type, time, message count, file-change badges), pushed live via `session/projection` (no polling), windowed for long histories |
-| ↩️ | **Artifact rollback** | **context-only / artifacts-only / both** with dry-run preview; git-first + content-addressed snapshot fallback; the rollback is itself a new version (`restore`) |
-| 🧭 | **Jump-to-conversation** | one click from a version to that point in the conversation (auto-loads history, anchor highlight) |
+| 🕘 | **Checkpoints** | Pre-operation checkpoints (input, recall, edit, regenerate, file undo and restore), with type, time and message count; updates while open and uses a windowed list |
+| ↩️ | **Checkpoint restore** | **context-only / artifacts-only / both** with preview; restore complete conversation and pre-operation file snapshots; restoring also saves a checkpoint first |
+| 🧭 | **History navigation** | Jump to messages from the current conversation path and pause history; checkpoint rows have one restore action |
 | 🧹 | **Bounded storage** | snapshots keep the most recent N versions (default 50); throttled background sweep prunes truncated ones |
 
 **Why it's different** (the interaction layer — the guarantees above are the storage layer):
@@ -312,9 +319,9 @@ The dynamic host registers the same operations behind the package-private
 | **Show the original input after editing** | on | A collapsed "original input" reference under the re-sent message showing the **most recent** replaced text (reference only — never sent to the model). |
 | **Start a fresh conversation after editing** | off | Hide earlier messages too, so the conversation looks like a fresh start (the whole surface is rewound before re-sending). Default off: only the edited round's context is replaced. |
 | **Hide shadowed messages per marker** | on | On (default): recall hides the selected range; edit/regenerate hide the replaced round per their markers. Off: every message stays visible; markers only show the notice and reference (review the full history). A single edit/regenerate that would hide more than 40% of the conversation degrades to notice-only; explicit recalls are exempt from this ratio limit. |
-| **Version & artifact snapshots** | on | On: every recall/edit records a version (messages and touched files) powering the timeline and artifact rollback. Off: only rewinds context — no version records, no artifact tracking (lightest). |
-| **Git integration** | on | On: use git to record and roll back when the workspace is a repository (never auto-commits, never touches your branches); non-repo workspaces can enable git from the timeline. Off: built-in snapshots under the plugin data home only — the plugin never touches the workspace git state; features are equivalent. |
-| **Version retention limit** | 50 | File snapshots are kept for the most recent N versions; older ones are pruned automatically (timeline records and the audit trail are always kept). |
+| **Version & artifact snapshots** | on | Save before input, recall, edit, regenerate, file undo and restore. Off: stop creating new checkpoints. |
+| **Git integration** | on | Show workspace git status and allow repository initialization. Restore uses pre-operation file snapshots, including uncommitted content. |
+| **Version retention limit** | 50 | Retain files for the most recent N checkpoints; older checkpoints still restore conversation. The list holds up to 200 checkpoints, and the original session log remains intact. |
 
 ---
 

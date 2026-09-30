@@ -65,7 +65,10 @@ beforeAll(async () => {
         },
       })
     }
-    if (target.includes('/versions')) return asJson({ ok: true, value: { enabled: true, versions, hostReplacementCount: 0 } })
+    if (target.includes('/checkpoints')) return asJson({ ok: true, value: {
+      enabled: true, semantics: 'before-operation', versions, hostReplacementCount: 0,
+      records: [...digests.entries()].map(([boundarySeq, digest]) => ({ boundarySeq, ...digest })), tree,
+    } })
     return asJson({ ok: true, value: null })
   }
   const source = readFileSync(CLIENT_SOURCE_PATH, 'utf8')
@@ -318,7 +321,7 @@ describe('收起三处：开头 / 展开层内悬浮 / 末尾（真实渲染器�
       if (target.includes('/summaries')) {
         return asJson({ ok: true, value: { enabled: false, sessionId: 's1', skipped: 0, error: null, records: fixture.records, tree: fixture.nodes } })
       }
-      if (target.includes('/versions')) return asJson({ ok: true, value: { enabled: true, versions: fixture.versions, hostReplacementCount: 0 } })
+      if (target.includes('/checkpoints')) return asJson({ ok: true, value: { enabled: true, semantics: 'before-operation', versions: fixture.versions, records: fixture.records, tree: fixture.nodes, hostReplacementCount: 0 } })
       return asJson({ ok: true, value: null })
     }
     mini.reset()
