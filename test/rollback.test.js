@@ -4,12 +4,21 @@
  * marker — as real durable logs do) so `foldSurface` works; a fake seam /
  * ctx / subprocess stand in for the host services.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { posix } from 'node:path'
+import { lstat, unlink } from 'node:fs/promises'
 import { sessionEvents, eventAt } from '../lib/host-compat.js'
 import { createRollbackExecutor } from '../lib/rollback.js'
 import { carrierTargetSeq } from '../lib/marker-carrier.js'
 import { makeAgent, makeHooks } from './helpers.js'
 import { replaceOp, SURFACE_OP_START_KEY, SURFACE_OP_END_KEY } from './surface-op-shape.js'
+
+vi.mock('node:fs/promises', () => ({ lstat: vi.fn(), unlink: vi.fn() }))
+beforeEach(() => {
+  vi.clearAllMocks()
+  lstat.mockResolvedValue({ isFile: () => true })
+  unlink.mockResolvedValue(undefined)
+})
 
 /** User message event (real user input → round boundary). */
 function userMessage(id, text, extra = {}) {
@@ -135,17 +144,27 @@ function makeSeam(overrides = {}) {
   }
 }
 
-/** A fake ctx: fs (resolve/contains/stat/writeText), subprocess, sandboxPolicy. */
+/** rc.2-shaped FsTargets and opaque FsVersion values. Real fs is smoke-tested. */
 function makeCtx() {
   const writes = []
   const spawns = []
   const ctx = {
     fs: {
-      resolve: async (path, { cwd } = {}) => (path === '.' ? cwd ?? '/work' : `${cwd ?? '/work'}/${path}`),
-      contains: (root, target) => target.startsWith(root + '/'),
-      stat: vi.fn(async (target) => ({ version: 7 })),
-      writeText: vi.fn(async (target, content, expected) => {
-        writes.push({ target, content, expected })
+      resolve: async (path, { cwd = '/work' } = {}) => {
+        const targetKey = posix.resolve(cwd, path)
+        return { displayPath: targetKey, targetKey }
+      },
+      contains: (root, target) => target.targetKey === root.targetKey || target.targetKey.startsWith(root.targetKey + '/'),
+      stat: vi.fn(async () => ({ type: 'file', version: 'rc2-version-7' })),
+      withLock: vi.fn(async (_key, fn) => fn()),
+      checkedTarget: vi.fn(async (target, policy) => {
+        if (policy?.mode === 'read-only') throw new Error('FS_WRITE_DENIED')
+        return target
+      }),
+      processPath: (target) => target.targetKey,
+      writeText: vi.fn(async (target, content, expected, _signal, policy) => {
+        if (policy?.mode === 'read-only') throw new Error('FS_WRITE_DENIED')
+        writes.push({ target, content, expected, policy })
       }),
     },
     subprocess: {
@@ -167,7 +186,7 @@ function makeRollback(session, seamOverrides = {}, ctxOverrides = {}) {
   const agents = { get: () => makeAgent() }
   const writeMarker = makeHooks(agents).writeMarker
   const rollback = createRollbackExecutor({ ctx: { ...ctx, ...ctxOverrides }, sessions, seam, writeMarker, log: () => {} })
-  return { rollback, seam, writes, spawns, sessions }
+  return { rollback, seam, writes, spawns, sessions, ctx }
 }
 
 describe('rollback preview', () => {
@@ -252,27 +271,30 @@ describe('rollback execute', () => {
     expect(seam.resolveSnapshot).toHaveBeenCalledWith('v3', 'src/a.ts')
     expect(seam.readSnapshot).toHaveBeenCalledWith('sha-a')
     expect(writes.length).toBe(1)
-    expect(writes[0].target).toBe('/work/src/a.ts')
+    expect(writes[0].target.targetKey).toBe('/work/src/a.ts')
     expect(writes[0].content).toBe('file content')
-    expect(writes[0].expected).toEqual({ kind: 'replaceIfVersion', version: 7 })
+    expect(writes[0].expected).toEqual({ kind: 'replaceIfVersion', version: 'rc2-version-7' })
     expect(result.artifacts[0]).toMatchObject({ path: 'src/a.ts', status: 'restored' })
+    expect(result.complete).toBe(true)
   })
 
-  it('rolls back deleted files through subprocess rm (guarded)', async () => {
+  it('deletes an absent-at-version file under the host lock and sandbox check', async () => {
     const session = makeSession().seed(
       userMessage('u1', 'hi'),
       assistantMessage('a1', 'yo'),
       userMessage('u2', 'again'),
       markerEvent('retrace-recall-1', [0, 1], [0, 1]),
     )
-    const { rollback, spawns } = makeRollback(session, {
+    const { rollback, spawns, ctx } = makeRollback(session, {
       snapshot: () => ({ enabled: true, versions: [versionRecord({ touchedFiles: [{ path: 'gone.txt', mode: 'deleted' }] })] }),
     })
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'artifacts' })
-    expect(spawns.length).toBe(1)
-    expect(spawns[0].argv[0]).toBe('rm')
-    expect(spawns[0].argv).toContain('gone.txt')
+    expect(spawns).toEqual([])
+    expect(ctx.fs.withLock).toHaveBeenCalledWith('/work/gone.txt', expect.any(Function))
+    expect(ctx.fs.checkedTarget).toHaveBeenCalledWith(expect.objectContaining({ targetKey: '/work/gone.txt' }), { mode: 'workspace-write' })
+    expect(unlink).toHaveBeenCalledWith('/work/gone.txt')
     expect(result.artifacts[0]).toMatchObject({ path: 'gone.txt', status: 'deleted' })
+    expect(result.complete).toBe(true)
   })
 
   it('uses git checkout when the workspace is a repository with a recorded HEAD', async () => {
@@ -304,5 +326,122 @@ describe('rollback execute', () => {
     const result = await rollback.execute({ sessionId: 's1', versionId: 'v3', scope: 'both' })
     expect(result.markerSeq).toBe(6)
     expect(writes.length).toBe(1)
+  })
+})
+
+describe('rc.2 file rollback guards', () => {
+  const args = { sessionId: 's1', versionId: 'v3', scope: 'artifacts' }
+  const deleteVersion = (path = 'gone.txt') => ({
+    snapshot: () => ({ versions: [versionRecord({ touchedFiles: [{ path, mode: 'deleted' }] })] }),
+  })
+
+  it('creates a missing snapshot file only if it is still absent', async () => {
+    const { rollback, ctx, writes } = makeRollback(makeSession())
+    ctx.fs.stat.mockResolvedValue(null)
+    expect((await rollback.execute(args)).complete).toBe(true)
+    expect(writes[0].expected).toEqual({ kind: 'createIfAbsent' })
+  })
+
+  it.each([
+    ['missing version', { type: 'file' }],
+    ['directory', { type: 'directory', version: 'v1' }],
+  ])('refuses an unguardable restore: %s', async (_label, stat) => {
+    const { rollback, ctx, writes } = makeRollback(makeSession())
+    ctx.fs.stat.mockResolvedValue(stat)
+    const result = await rollback.execute(args)
+    expect(result.complete).toBe(false)
+    expect(result.artifacts[0].status).toBe('failed')
+    expect(writes).toEqual([])
+  })
+
+  it('does not turn a stat error into an unguarded write', async () => {
+    const { rollback, ctx, writes } = makeRollback(makeSession())
+    ctx.fs.stat.mockRejectedValue(new Error('FS_READ_DENIED'))
+    const result = await rollback.execute(args)
+    expect(result.artifacts[0]).toMatchObject({ status: 'failed', reason: expect.stringContaining('FS_READ_DENIED') })
+    expect(writes).toEqual([])
+    expect(result.complete).toBe(false)
+  })
+
+  it('preserves BOM and CRLF in snapshot text', async () => {
+    const original = '\uFEFFfirst\r\nsecond\r\n'
+    const { rollback, writes } = makeRollback(makeSession(), { readSnapshot: async () => Buffer.from(original) })
+    await rollback.execute(args)
+    expect(writes[0].content).toBe(original)
+  })
+
+  it('rejects invalid UTF-8 rather than writing replacement characters', async () => {
+    const { rollback, writes } = makeRollback(makeSession(), { readSnapshot: async () => Buffer.from([0xff]) })
+    const result = await rollback.execute(args)
+    expect(result.complete).toBe(false)
+    expect(writes).toEqual([])
+  })
+
+  it('reports file conflicts while preserving an already completed context rollback', async () => {
+    const session = makeSession().seed(userMessage('u1', 'hi'), assistantMessage('a1', 'yo'), userMessage('u2', 'again'), markerEvent('retrace-recall-1', [0, 1], [0, 1]), userMessage('u3', 'more'))
+    const { rollback, ctx } = makeRollback(session)
+    ctx.fs.writeText.mockRejectedValue(new Error('FS_STALE_VERSION'))
+    const result = await rollback.execute({ ...args, scope: 'both' })
+    expect(result.context.messages).toBe(1)
+    expect(result.markerSeq).toBe(6)
+    expect(result.artifacts[0].status).toBe('failed')
+    expect(result.complete).toBe(false)
+  })
+
+  it('honors read-only policy for restore and deletion', async () => {
+    for (const seam of [{}, deleteVersion()]) {
+      const { rollback, writes } = makeRollback(makeSession(), seam, { sandboxPolicy: { resolve: () => ({ mode: 'read-only' }) } })
+      const result = await rollback.execute(args)
+      expect(result.artifacts[0].status).toBe('failed')
+      expect(result.complete).toBe(false)
+      expect(writes).toEqual([])
+    }
+    expect(unlink).not.toHaveBeenCalled()
+  })
+
+  it('refuses deletion when the version changes before acquiring the lock', async () => {
+    const { rollback, ctx } = makeRollback(makeSession(), deleteVersion())
+    ctx.fs.stat.mockResolvedValueOnce({ type: 'file', version: 'before' }).mockResolvedValue({ type: 'file', version: 'after' })
+    const result = await rollback.execute(args)
+    expect(result.artifacts[0]).toMatchObject({ status: 'failed', reason: expect.stringContaining('changed before deletion') })
+    expect(unlink).not.toHaveBeenCalled()
+  })
+
+  it('refuses deletion if sandbox resolution redirects the target', async () => {
+    const { rollback, ctx } = makeRollback(makeSession(), deleteVersion())
+    ctx.fs.checkedTarget.mockResolvedValue({ displayPath: '/outside/gone.txt', targetKey: '/outside/gone.txt' })
+    expect((await rollback.execute(args)).complete).toBe(false)
+    expect(unlink).not.toHaveBeenCalled()
+  })
+
+  it('refuses a symlink in the final native deletion check', async () => {
+    const { rollback } = makeRollback(makeSession(), deleteVersion())
+    lstat.mockResolvedValue({ isFile: () => false })
+    expect((await rollback.execute(args)).complete).toBe(false)
+    expect(unlink).not.toHaveBeenCalled()
+  })
+
+  it('treats an already absent deletion target as unchanged', async () => {
+    const { rollback, ctx } = makeRollback(makeSession(), deleteVersion())
+    ctx.fs.stat.mockResolvedValue(null)
+    const result = await rollback.execute(args)
+    expect(result.artifacts[0].status).toBe('unchanged')
+    expect(result.complete).toBe(true)
+    expect(unlink).not.toHaveBeenCalled()
+  })
+
+  it('fails closed on a backend without checked native deletion', async () => {
+    const { rollback, ctx } = makeRollback(makeSession(), deleteVersion())
+    ctx.fs.checkedTarget = undefined
+    expect((await rollback.execute(args)).complete).toBe(false)
+    expect(unlink).not.toHaveBeenCalled()
+  })
+
+  it.each(['../outside.txt', '.'])('rejects a deletion outside the file boundary: %s', async (path) => {
+    const { rollback } = makeRollback(makeSession(), deleteVersion(path))
+    const result = await rollback.execute(args)
+    expect(result.artifacts[0]).toMatchObject({ status: 'skipped', reason: 'outside-workspace' })
+    expect(result.complete).toBe(false)
+    expect(unlink).not.toHaveBeenCalled()
   })
 })

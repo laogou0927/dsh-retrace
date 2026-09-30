@@ -94,6 +94,13 @@ const testsOf = (relPath) => {
  */
 const CLAIM_REGISTRY = [
   {
+    file: 'lib/client.js',
+    claims: ['撤销文件不会撤回对话'],
+    evidence: [
+      { test: 'test/edit-undo.test.js', title: 'restores the first raw before-image after several edits; CRLF and BOM survive, log does not change', claim: '撤销文件不会撤回对话', note: 'Undo only restores workspace bytes; the test compares the complete event snapshot before and after applying undo.' },
+    ],
+  },
+  {
     file: 'lib/close-guard-client.js',
     claims: ['无法保证覆盖所有入口', '而不是"桌面端都不会触发"'],
     evidence: [

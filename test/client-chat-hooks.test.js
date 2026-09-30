@@ -46,7 +46,7 @@ vi.mock('react', () => ({
   Fragment: Symbol('react.fragment'),
 }))
 
-import { apply, __setMessageEditorWire, zh, en } from '../lib/client.js'
+import { apply, __setMessageEditorWire, rollbackPreviewAfterResult, zh, en } from '../lib/client.js'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const CLIENT_SOURCE_PATH = path.join(ROOT, 'lib', 'client.js')
@@ -243,13 +243,23 @@ describe('useSeqHidden — visual hiding, guard-aware', () => {
     expect(hooks.useSeqHidden(useChatFor(snap), 999)).toBe(false)
   })
 
-  it('degraded marker (would hide >40% of a >20-row conversation) hides nothing', () => {
+  it.each(['edit', 'regenerate'])('degraded %s marker (would hide >40% of a >20-row conversation) hides nothing', (op) => {
     const rows = mapSeqs(1, 21).map((seq) => userMessage(`u${seq}`, seq))
-    const snap = chatSnapshot([...rows, marker('m1', 100, mapSeqs(1, 21))])
+    const snap = chatSnapshot([...rows, marker('m1', 100, mapSeqs(1, 21), { op })])
     const useChat = useChatFor(snap)
     // Same seq is still SHADOWED (operation feasibility) but NOT hidden (visual).
     expect(hooks.useShadowed(useChat, 5)).toBe(true)
     expect(hooks.useSeqHidden(useChat, 5)).toBe(false)
+  })
+
+  it('an explicit recall hides even the entire selected history of a >20-row conversation', () => {
+    const rows = mapSeqs(1, 25).map((seq) => userMessage(`u${seq}`, seq))
+    const snap = chatSnapshot([...rows, marker('m1', 100, mapSeqs(1, 25))])
+    const useChat = useChatFor(snap)
+    const plan = hooks.useMarkerHidePlan(useChat)
+    expect(plan.planFor('m1').degraded).toBe(false)
+    expect(plan.hiddenFor('m1')).toEqual(rows.map((node) => node.key))
+    for (let seq = 1; seq <= 25; seq += 1) expect(hooks.useSeqHidden(useChat, seq)).toBe(true)
   })
 
   it('the 40% guard does not trip for a large conversation with a small shadow', () => {
@@ -344,7 +354,7 @@ describe('useMarkerHidePlan — per-marker hide plan + snapshot memo', () => {
     const snap = chatSnapshot([
       ...rows,
       marker('mGood', 100, [1]), // 1/30 rows → fine
-      marker('mBad', 101, mapSeqs(2, 26)), // 25/30 rows → degraded
+      marker('mBad', 101, mapSeqs(2, 26), { op: 'edit' }), // 25/30 rows → degraded
     ])
     const plan = hooks.useMarkerHidePlan(useChatFor(snap))
     expect(plan.rowCount).toBe(30)
@@ -607,6 +617,30 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     expect(collect(element).some((element) => element.props.role === 'status')).toBe(true)
   })
 
+  it('eight recalled seqs covering 52% of the view hide their rows without the degraded notice, even after continuing', () => {
+    const RecallMarkerRow = findComponent('conversation.chat.node', 'recall-marker')
+    const node = marker('m1', 100, mapSeqs(15, 22))
+    const rows = [
+      ...mapSeqs(1, 22).map((seq) => userMessage(`u${seq}`, seq)),
+      assistantStep('a18', 'msg-18', 18), turnTail('tt19', 19), toolCall('tc20', 20),
+      referenceRow('ref15', 15), userActions('ua15', 15), node,
+    ]
+    const snap = chatSnapshot(rows)
+    expect(hooks.useMarkerHidePlan(useChatFor(snap)).unionRatio).toBeCloseTo(0.52)
+    for (const entries of [rows, [...rows, userMessage('next', 101), userActions('next-actions', 101)]]) {
+      const element = RecallMarkerRow({ node, useChat: useChatFor(chatSnapshot(entries)), t })
+      const rendered = collect(element)
+      const styles = rendered.filter((element) => element.type === 'style')
+      expect(styles).toHaveLength(1)
+      const css = styles[0].props.dangerouslySetInnerHTML.__html
+      for (const key of [...mapSeqs(15, 22).map((seq) => `u${seq}`), 'a18', 'tt19', 'tc20', 'ref15', 'ua15']) {
+        expect(css).toContain(`[data-chat-anchor-key="${key}"],[data-chat-node-key="${key}"]{display:none!important}`)
+      }
+      for (const key of ['u14', 'm1', 'next']) expect(css).not.toContain(`[data-chat-node-key="${key}"]`)
+      expect(rendered.some((element) => element.children.includes('marker.degradedHint'))).toBe(false)
+    }
+  })
+
   it('RecallMarkerRow is inert for compact markers and legacy markers emit no hide rules', () => {
     const RecallMarkerRow = findComponent('conversation.chat.node', 'recall-marker')
     const compact = marker('m1', 6, [5], { compact: true, op: 'fold' })
@@ -614,6 +648,27 @@ describe('slot components mount with a host-shaped chat snapshot', () => {
     const legacy = marker('m1', 6, [5], { legacy: true })
     const element = RecallMarkerRow({ node: legacy, useChat: useChatFor(chatSnapshot([userMessage('u1', 5), legacy])), t })
     expect(collect(element).filter((node) => node.type === 'style')).toHaveLength(0)
+  })
+
+  it('the full-history preference still shows recalled rows and can turn their hiding back on', () => {
+    const RecallMarkerRow = findComponent('conversation.chat.node', 'recall-marker')
+    const OptionsRow = findComponent('settings.general.item')
+    const options = collect(OptionsRow({ t }))
+    const label = options.find((element) => element.type === 'label'
+      && collect(element).some((child) => child.children.includes('options.hideShadowed')))
+    const toggle = collect(label).find((element) => element.type === 'input').props.onChange
+    const node = marker('m1', 100, mapSeqs(1, 25))
+    const snap = chatSnapshot([...mapSeqs(1, 25).map((seq) => userMessage(`u${seq}`, seq)), node])
+    const styles = () => collect(RecallMarkerRow({ node, useChat: useChatFor(snap), t }))
+      .filter((element) => element.type === 'style')
+    try {
+      toggle({ target: { checked: false } })
+      expect(styles()).toHaveLength(0)
+      toggle({ target: { checked: true } })
+      expect(styles()).toHaveLength(1)
+    } finally {
+      toggle({ target: { checked: true } })
+    }
   })
 })
 
@@ -889,8 +944,8 @@ describe('jumpToAnchor — resolve BEFORE the tab switch (unmount freezes the re
 // ---------------------------------------------------------------------------
 describe('hide plan is computed once per snapshot (performance guard)', () => {
   const nodeAt = (key, seq) => ({ key, kind: 'user-message', anchorSeq: seq, data: { seq } })
-  const marker = (key, seq, shadowedSeqs) => ({
-    key, kind: 'recall-marker', anchorSeq: seq, data: { seq, op: 'recall', shadowedSeqs, legacy: false, compact: false },
+  const marker = (key, seq, shadowedSeqs, op = 'recall') => ({
+    key, kind: 'recall-marker', anchorSeq: seq, data: { seq, op, shadowedSeqs, legacy: false, compact: false },
   })
 
   it('the per-row hide lookup does not rescan the node map', () => {
@@ -939,8 +994,9 @@ describe('hide plan is computed once per snapshot (performance guard)', () => {
       snap([...rows1to(6), marker('m1', 50, [3])]), // live marker
       snap([...rows1to(6), marker('m1', 50, [3]), marker('m2', 51, [4, 5])]), // two markers
       snap([...rows1to(6), marker('m1', 50, [3], )].map((n, i) => (i === 6 ? { ...n, data: { ...n.data, compact: true, op: 'fold' } } : n))), // compact
-      snap([...rows1to(25), marker('m1', 500, rows1to(25).map((n) => n.anchorSeq))]), // degraded (>40% of 25)
-      snap([...rows1to(30), marker('mGood', 100, [1]), marker('mBad', 101, Array.from({ length: 25 }, (_, i) => i + 2))]), // per-marker degradation
+      snap([...rows1to(25), marker('m1', 500, rows1to(25).map((n) => n.anchorSeq))]), // whole-history explicit recall
+      snap([...rows1to(25), marker('m1', 500, rows1to(25).map((n) => n.anchorSeq), 'edit')]), // degraded edit (>40% of 25)
+      snap([...rows1to(30), marker('mGood', 100, [1]), marker('mBad', 101, Array.from({ length: 25 }, (_, i) => i + 2), 'edit')]), // per-marker degradation
       snap([nodeAt('u5', 5), { key: 'u5b', kind: 'user-message', anchorSeq: 5, data: { seq: 5 } }, marker('m1', 50, [5])]), // duplicate seq: first match wins
     ]
     for (const snapshot of snapshots) {
@@ -1578,6 +1634,55 @@ describe('读档点 completeness locks (R20–R24/R30/R31/R33–R35)', () => {
     const element = hooks.PreviewBox({ preview, scope: 'both', setScope() {}, busy: false, t: tZh, onConfirm() {}, onCancel() {} })
     expect(textOf(element)).toContain(zh['timeline.filesNone'])
     expect(hasClass(element, 'dsh-rt-modal-files')).toBe(false)
+  })
+
+  it('keeps a partial file rollback visible and requires a refreshed preview before retry', () => {
+    const preview = {
+      versionId: 'v9', kind: 'edit', boundarySeq: 3, contextOnly: false,
+      data: { context: { messages: 3 }, artifacts: { rows: [] } }, error: null,
+    }
+    const value = { complete: false, context: { messages: 3 }, artifacts: [
+      { path: 'ok.txt', status: 'restored' }, { path: 'changed.txt', status: 'failed' }, { path: 'missing.txt', status: 'skipped' },
+    ] }
+    const next = rollbackPreviewAfterResult(preview, { ok: true, value }, tZh)
+    expect(next.result).toBe(value)
+    const refresh = vi.fn()
+    const element = hooks.PreviewBox({ preview: next, scope: 'both', setScope() {}, busy: false, t: tZh, onConfirm() {}, onCancel() {}, onRefresh: refresh })
+    const text = textOf(element)
+    expect(text).toContain(zh['timeline.rollbackPartial'])
+    expect(text).toContain(tZh('timeline.contextRestored', { count: 3 }))
+    expect(text).toContain('失败: changed.txt')
+    expect(text).toContain('未恢复: missing.txt')
+    expect(text).not.toContain('失败: ok.txt')
+    expect(collect(element).find((el) => el.props.key === 'confirm').props.disabled).toBe(true)
+    expect(collect(element).filter((el) => el.type === 'input').every((el) => el.props.disabled)).toBe(true)
+    collect(element).find((el) => el.props.key === 'refresh').props.onClick()
+    expect(refresh).toHaveBeenCalledOnce()
+  })
+
+  it('detects failed file rows from an older host without a complete flag', () => {
+    const preview = { error: null }
+    expect(rollbackPreviewAfterResult(preview, { ok: true, value: { artifacts: [{ status: 'failed' }] } }, tZh).error).toBe(zh['timeline.rollbackPartial'])
+  })
+
+  it('closes a fully completed rollback, including context-only operations', () => {
+    for (const value of [{ complete: true, artifacts: [{ status: 'restored' }, { status: 'deleted' }, { status: 'unchanged' }] }, { artifacts: [] }]) {
+      expect(rollbackPreviewAfterResult({}, { ok: true, value }, tZh)).toBeNull()
+    }
+  })
+
+  it('keeps request failures visible and disables confirmation until preview reload', () => {
+    const preview = { data: { context: { messages: 0 }, artifacts: { rows: [] } }, error: null }
+    const next = rollbackPreviewAfterResult(preview, { ok: false, error: { message: 'agent busy' } }, tZh)
+    expect(next.error).toBe('agent busy')
+    const element = hooks.PreviewBox({ preview: next, scope: 'both', setScope() {}, busy: false, t: tZh })
+    expect(collect(element).find((el) => el.props.key === 'confirm').props.disabled).toBe(true)
+    expect(collect(element).find((el) => el.props.key === 'refresh')).toBeDefined()
+  })
+
+  it('disables rollback while the preview is still loading', () => {
+    const element = hooks.PreviewBox({ preview: { data: null, error: null }, scope: 'both', setScope() {}, busy: false, t: tZh })
+    expect(collect(element).find((el) => el.props.key === 'confirm').props.disabled).toBe(true)
   })
 
   it('R35 · 堵掉键盘/快捷跳过确认：只有显式点击确认按钮才提交', () => {

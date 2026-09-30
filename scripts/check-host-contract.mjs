@@ -260,6 +260,10 @@ const SESSION_TITLE = '/node_modules/@deepseek-ai/dsh-session-title/lib/index.js
 const WEB_SERVER = '/node_modules/@deepseek-ai/dsh-host-webserver/lib/index.js'
 const FS_LOCAL = '/node_modules/@deepseek-ai/dsh-fs-local/lib/index.js'
 const FS_SANDBOX = '/node_modules/@deepseek-ai/dsh-fs-sandbox/lib/index.js'
+const FS_OBSERVATION_POLICY = '/node_modules/@deepseek-ai/dsh-fs-observation-policy/lib/index.js'
+const TOOLS = '/node_modules/@deepseek-ai/dsh-tools/lib/index.js'
+const TOOL_FS = '/node_modules/@deepseek-ai/dsh-tool-fs/lib/index.js'
+const TOOL_PWSH = '/node_modules/@deepseek-ai/dsh-tool-pwsh/lib/index.js'
 const SUBPROCESS_LOCAL = '/node_modules/@deepseek-ai/dsh-subprocess-local/lib/index.js'
 const SANDBOX_POLICY = '/node_modules/@deepseek-ai/dsh-sandbox-policy/lib/index.js'
 const JOBS_LOCAL = '/node_modules/@deepseek-ai/dsh-jobs-local/lib/index.js'
@@ -386,8 +390,24 @@ const CHECKS = [
   { kind: 'present', id: 'fs.contains', file: FS_LOCAL, re: /^\s+contains\(parent, child\)/m, what: 'fs.contains(parent, child)', usedBy: 'lib/rollback.js:109, lib/versioning.js:86' },
   { kind: 'present', id: 'fs.stat', file: FS_LOCAL, re: /^\s+async stat\(target/m, what: 'fs.stat(target, signal)', usedBy: 'lib/rollback.js:192' },
   { kind: 'present', id: 'fs.readBytes', file: FS_LOCAL, re: /^\s+async readBytes\(target/m, what: 'fs.readBytes(target, signal, maxBytes)', usedBy: 'lib/versioning.js:87' },
+  { kind: 'present', id: 'fs.listDir', file: FS_LOCAL, re: /async listDir\(target, signal\)/, what: 'provider directory enumeration for PowerShell before/after images', usedBy: 'lib/edit-undo-pwsh.js: scanPowerShellWorkspace' },
+  { kind: 'present', id: 'fs.lstat', file: FS_LOCAL, re: /async lstat\(path, opts, signal\)/, what: 'lexical no-follow stat for workspace scanning', usedBy: 'lib/edit-undo-pwsh.js: scanPowerShellWorkspace' },
+  { kind: 'present', id: 'pwsh.tool-name', file: TOOL_PWSH, re: /return defineTool\(\{\s*name: "pwsh"/, what: 'one-shot PowerShell tool dispatch name', usedBy: 'lib/edit-undo-pwsh.js: begin' },
+  { kind: 'present', id: 'pwsh.background-dto', file: TOOL_PWSH, re: /kind: "background",\s*jobId: startJob/, what: 'PowerShell background result carries its managed job id', usedBy: 'lib/edit-undo-pwsh.js: end' },
+  { kind: 'present', id: 'pwsh.promoted-dto', file: TOOL_PWSH, re: /kind: "promoted",\s*jobId: attached.id/, what: 'PowerShell timeout promotion retains the managed job id', usedBy: 'lib/edit-undo-pwsh.js: end' },
+  { kind: 'present', id: 'jobs.events-subscribe', file: JOBS_LOCAL, re: /get events\(\)[\s\S]*?subscribe: \(filter, listener\) => this.hub.subscribe/, what: 'job event subscription through the accessing context', usedBy: 'lib/edit-undo-pwsh.js: begin' },
+  { kind: 'present', id: 'jobs.settled-event', file: JOBS_LOCAL, re: /type: "settled",\s*job: this.view\(job\),\s*cause,/, what: 'managed job settlement event with snapshot and cause', usedBy: 'lib/edit-undo-pwsh.js: begin' },
   // 5-arg form the plugin calls: (target, content, expected, signal, sandboxPolicy)
   { kind: 'present', id: 'fs.writeText', file: FS_SANDBOX, re: /async writeText\(target, content, expected, signal, sandboxPolicy\)/, what: 'fs-sandbox writeText(..., sandboxPolicy)', usedBy: 'lib/rollback.js:196, lib/git-adapter.js:61' },
+  { kind: 'present', id: 'fs.withLock', file: FS_LOCAL, re: /async withLock\(targetKey, op\)/, what: 'local per-target mutation lock', usedBy: 'lib/edit-undo.js: removeCreated; lib/rollback.js: removeOne' },
+  { kind: 'present', id: 'fs.processPath', file: FS_LOCAL, re: /processPath\(target\)/, what: 'canonical local process path', usedBy: 'lib/edit-undo.js: removeCreated; lib/rollback.js: removeOne' },
+  { kind: 'present', id: 'fs.checkedTarget', file: FS_SANDBOX, re: /async checkedTarget\(target, sandboxPolicy\)/, what: 'sandbox identity and policy check', usedBy: 'lib/edit-undo.js: removeCreated; lib/rollback.js: removeOne' },
+  { kind: 'present', id: 'tools.execute-waterfall', file: TOOLS, re: /waterfall\(carrier, "tools\/execute", mutableExec/, what: 'around-dispatch tool middleware', usedBy: 'lib/edit-undo.js: register' },
+  { kind: 'present', id: 'fs.write-intent', file: TOOL_FS, re: /waterfall\("fs\/write-intent", target, exec/, what: 'write intent middleware with execution identity', usedBy: 'lib/edit-undo.js: captureIntent' },
+  { kind: 'present', id: 'fs.edit-intent', file: TOOL_FS, re: /waterfall\("fs\/edit-intent", target, exec/, what: 'edit intent middleware with execution identity', usedBy: 'lib/edit-undo.js: captureIntent' },
+  { kind: 'present', id: 'fs.intent-terminal-policy', file: FS_OBSERVATION_POLICY, re: /ctx\.on\("fs\/write-intent", \(target, actor\) => Promise\.resolve\(\)\.then\(\(\) => gate\.writeIntent\(target, actor\)\)\)/, what: 'terminal observation policy requires an outer capture listener', usedBy: 'lib/edit-undo.js: register (prepend)' },
+  { kind: 'present', id: 'fs.edit-intent-object', file: FS_OBSERVATION_POLICY, re: /return \{\s*version: prior\.version\s*\}/, what: 'edit intent carries its opaque version in an object', usedBy: 'lib/edit-undo.js: captureIntent' },
+  { kind: 'present', id: 'fs.observed', file: TOOL_FS, re: /emit\("fs\/observed", target, \{\s*kind: "present",\s*version: outcome.version\s*\}, exec\)/, what: 'post-mutation opaque version with execution identity', usedBy: 'lib/edit-undo.js: record' },
   { kind: 'present', id: 'subprocess.spawn', file: SUBPROCESS_LOCAL, re: /^\s+spawn\(spec\)/m, what: 'subprocess.spawn(spec)', usedBy: 'lib/rollback.js:171, lib/git-adapter.js:35' },
   { kind: 'present', id: 'subprocess.resolveExecutable', file: SUBPROCESS_LOCAL, re: /^\s+async resolveExecutable\(command/m, what: 'subprocess.resolveExecutable(command)', usedBy: 'lib/git-adapter.js:34' },
   { kind: 'present', id: 'sandboxPolicy.resolve', file: SANDBOX_POLICY, re: /^\s+resolve\(request/m, what: 'sandboxPolicy.resolve(request)', usedBy: 'lib/rollback.js:195' },

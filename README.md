@@ -37,6 +37,77 @@ DeepSeek Harness.
 > See [Compatibility & upgrade notes](#-compatibility--upgrade-notes) for what
 > 0.2.0 broke and the `patches/` dependency patch this fork carries.
 
+## Undo file edits in a turn
+
+Click **⟲** in an assistant reply's action row to preview that turn's file edits,
+then undo one file or the whole turn. This restores files without changing messages.
+Recording starts after plugin activation and covers standard `write` / `edit` tools
+and DSH's `pwsh` PowerShell tool:
+exact UTF-8 before/after content, including original CRLF and BOM, is used to generate
+reverse patches. Files created in the turn can be deleted; shell-deleted files can be
+restored, and renames are captured as deletion plus creation. Binaries, non-UTF-8 text, files outside the workspace,
+files over 1 MiB, and unverifiable captures are excluded. Use the published bundle;
+the dynamic eval package does not provide this feature.
+
+PowerShell snapshots the workspace before execution and after the command actually
+settles; managed background jobs and timeout promotion retain the originating turn.
+Failed or cancelled commands still record files already written. Standard and shell
+edits in the same turn share their first before-image and last after-image.
+Scans skip `.git`, `node_modules`, directory links and the private journal. Each scan
+is limited to 5000 entries, 8 MiB of content, 64 directory levels and 5 seconds.
+Limits, unreadable paths, concurrent file tools or other active sessions/jobs in the
+same workspace produce an incomplete-capture notice and disable all-file/combined
+rewind; individually verified files can still be undone. No command parsing or
+rewriting is used. Manual external terminals and detached child processes are not
+automatically tracked; avoid external writes during a captured command. The alternate
+persistent PTY `pwsh` tool cannot prove command completion and is refused with a notice.
+UTF-16/legacy encodings are unsupported; use `-Encoding utf8` in PowerShell.
+File bytes are restored; empty directories and file metadata are not rolled back.
+
+Unrelated later edits are preserved, including independent edits on the same line.
+For each overlapping section, choose either the current content or the undo result;
+neither is preselected, and nothing is written until you confirm. A later-edited new
+file or a later-deleted existing file requires an explicit keep/delete/restore choice.
+Changes after preview or changed path identities invalidate the choices and require
+a fresh preview. Stop running/queued tasks in the workspace before applying.
+Multi-file undo runs per file; a failure preserves completed results and is reported.
+Snapshots survive restarts in `dsh-retrace/edit-undo/`. Each session retains at most
+50 recorded turns or 16 MiB, evicting older turns when either limit is reached.
+Previews show the first 4000 characters per side; merging and choices use complete
+content. Changes exceeding safe merge limits are refused.
+
+Test in a temporary workspace: read an existing text file first, then use standard
+`write` / `edit` to change it and create another. Repeat using DSH PowerShell with
+`Set-Content -Encoding utf8`, `Remove-Item -LiteralPath` and `Move-Item -LiteralPath` on
+files in that temporary workspace. Test a managed background write after it finishes.
+Preview, then undo. The original should return and the created
+file should disappear. Repeat with a manual edit to a different line: undo must
+preserve it. Then edit the same section: preview must require a choice before
+confirmation. A further edit after preview must invalidate the choices. Changes made before
+activation cannot acquire before-images retrospectively.
+
+The timeline's historical artifact rollback also keeps rc.2 file version guards
+and deletes individual files under the host lock and sandbox checks. If a restore
+or deletion fails, the dialog keeps completed results and lists the remaining
+files; refresh the preview before confirming another attempt.
+
+### Rewind conversation and files together
+
+Click **Rewind conversation and files** beside a user message. The preview covers
+recorded file edits in that message's turn and every subsequent turn. Continuous
+edits to the same file are merged, unrelated edits are preserved, and each overlap
+requires a choice. Confirmation processes files first, then withdraws the target
+message and everything after it from both the conversation and model context,
+returning the original input to the composer. The log retains its original events
+and receives only appended recall markers.
+
+Incomplete file processing leaves the conversation intact and lists the outcomes.
+If files succeeded but the conversation write failed, the error reports that state;
+refresh to retry, or use the original conversation-only recall. Dialogue or file
+changes invalidate the preview. Unsafe gaps between recorded turns block combined
+rewind. An empty file preview explicitly confirms a conversation-only effect.
+Recording scope and retention limits remain as described above.
+
 **Recall / edit-and-resend / regenerate** — the three moves every conversation
 deserves. But rewinding is not just "delete a message": DeepSeek Harness stores
 conversations in an append-only event log, so a recall only rewinds the context
@@ -223,7 +294,7 @@ The dynamic host registers the same operations behind the package-private
 | --- | --- | --- |
 | **Show the original input after editing** | on | A collapsed "original input" reference under the re-sent message showing the **most recent** replaced text (reference only — never sent to the model). |
 | **Start a fresh conversation after editing** | off | Hide earlier messages too, so the conversation looks like a fresh start (the whole surface is rewound before re-sending). Default off: only the edited round's context is replaced. |
-| **Hide shadowed messages per marker** | on | On (default): recall/edit/regenerate hide the replaced round per their markers. Off: every message stays visible; markers only show the notice and reference (review the full history). A single marker that would hide more than 40% of the conversation degrades to notice-only (history never silently vanishes). |
+| **Hide shadowed messages per marker** | on | On (default): recall hides the selected range; edit/regenerate hide the replaced round per their markers. Off: every message stays visible; markers only show the notice and reference (review the full history). A single edit/regenerate that would hide more than 40% of the conversation degrades to notice-only; explicit recalls are exempt from this ratio limit. |
 | **Version & artifact snapshots** | on | On: every recall/edit records a version (messages and touched files) powering the timeline and artifact rollback. Off: only rewinds context — no version records, no artifact tracking (lightest). |
 | **Git integration** | on | On: use git to record and roll back when the workspace is a repository (never auto-commits, never touches your branches); non-repo workspaces can enable git from the timeline. Off: built-in snapshots under the plugin data home only — the plugin never touches the workspace git state; features are equivalent. |
 | **Version retention limit** | 50 | File snapshots are kept for the most recent N versions; older ones are pruned automatically (timeline records and the audit trail are always kept). |
