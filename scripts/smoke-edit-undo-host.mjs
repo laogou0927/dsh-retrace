@@ -12,7 +12,6 @@ import assert from 'node:assert/strict'
 import { isBuiltin } from 'node:module'
 import { build } from 'esbuild'
 import { createEditUndo } from '../lib/edit-undo.js'
-import { createRollbackExecutor } from '../lib/rollback.js'
 
 const archive = process.argv[2]
 if (!archive) throw new Error('Pass the installed app.asar path')
@@ -252,78 +251,7 @@ try {
   await assert.rejects(disk.stat(path.join(workspace, 'ps-partial.txt')), { code: 'ENOENT' })
   console.log('PASS: rc.2 real PowerShell create/edit/delete/rename, background + timeout promotion settlement, nonzero exit + undo')
   disposeUndo()
-  const beforeLegacyLog = JSON.stringify(events)
 
-  // Historical artifact rollback must use the same rc.2 opaque version guard,
-  // including absence guards and sandboxed native deletion on Windows.
-  let touchedFiles = [
-    { path: 'existing.txt', mode: 'modified' },
-    { path: 'restored-new.txt', mode: 'modified' },
-    { path: 'obsolete.txt', mode: 'deleted' },
-  ]
-  const legacy = createRollbackExecutor({ ctx, sessions: ctx.sessions, seam: {
-    configFor: () => ({ git: false }),
-    snapshot: () => ({ versions: [{ versionId: 'old', boundarySeq: 0, touchedFiles }] }),
-    agentOf: () => agent,
-    resolveSnapshot: async () => 'snapshot',
-    readSnapshot: async () => Buffer.from(original),
-  } })
-  const rollbackArgs = { sessionId: session.id, versionId: 'old', scope: 'artifacts' }
-  await disk.writeFile(path.join(workspace, 'obsolete.txt'), 'created later')
-  let rolled = await legacy.execute(rollbackArgs)
-  assert.equal(rolled.complete, true, JSON.stringify(rolled))
-  assert.equal(await disk.readFile(path.join(workspace, 'existing.txt'), 'utf8'), original)
-  assert.equal(await disk.readFile(path.join(workspace, 'restored-new.txt'), 'utf8'), original)
-  await assert.rejects(disk.stat(path.join(workspace, 'obsolete.txt')), { code: 'ENOENT' })
-
-  const hostWriteText = provider.writeText
-  touchedFiles = [{ path: 'existing.txt', mode: 'modified' }]
-  provider.writeText = async function (target, text, expected, ...rest) {
-    assert.equal(expected.kind, 'replaceIfVersion')
-    assert.equal(typeof expected.version, 'string')
-    await disk.writeFile(path.join(workspace, 'existing.txt'), 'concurrent manual change')
-    return await hostWriteText.call(this, target, text, expected, ...rest)
-  }
-  try {
-    rolled = await legacy.execute(rollbackArgs)
-    assert.equal(rolled.complete, false, JSON.stringify(rolled))
-    assert.equal(rolled.artifacts[0].status, 'failed')
-    assert.equal(await disk.readFile(path.join(workspace, 'existing.txt'), 'utf8'), 'concurrent manual change')
-  } finally { provider.writeText = hostWriteText }
-
-  touchedFiles = [{ path: 'race-new.txt', mode: 'modified' }]
-  provider.writeText = async function (target, text, expected, ...rest) {
-    assert.equal(expected.kind, 'createIfAbsent')
-    await disk.writeFile(path.join(workspace, 'race-new.txt'), 'concurrent creation')
-    return await hostWriteText.call(this, target, text, expected, ...rest)
-  }
-  try {
-    rolled = await legacy.execute(rollbackArgs)
-    assert.equal(rolled.complete, false, JSON.stringify(rolled))
-    assert.equal(await disk.readFile(path.join(workspace, 'race-new.txt'), 'utf8'), 'concurrent creation')
-  } finally { provider.writeText = hostWriteText }
-
-  const hostWithLock = provider.withLock
-  touchedFiles = [{ path: 'obsolete.txt', mode: 'deleted' }]
-  await disk.writeFile(path.join(workspace, 'obsolete.txt'), 'delete candidate')
-  provider.withLock = async function (key, op) {
-    await disk.writeFile(path.join(workspace, 'obsolete.txt'), 'concurrent deletion conflict')
-    return await hostWithLock.call(this, key, op)
-  }
-  try {
-    rolled = await legacy.execute(rollbackArgs)
-    assert.equal(rolled.complete, false, JSON.stringify(rolled))
-    assert.equal(await disk.readFile(path.join(workspace, 'obsolete.txt'), 'utf8'), 'concurrent deletion conflict')
-  } finally { provider.withLock = hostWithLock }
-
-  policyMode = 'read-only'
-  touchedFiles = [{ path: 'existing.txt', mode: 'modified' }, { path: 'obsolete.txt', mode: 'deleted' }]
-  rolled = await legacy.execute(rollbackArgs)
-  assert.equal(rolled.complete, false, JSON.stringify(rolled))
-  assert.deepEqual(rolled.artifacts.map((file) => file.status), ['failed', 'failed'])
-  assert.equal(await disk.readFile(path.join(workspace, 'existing.txt'), 'utf8'), 'concurrent manual change')
-  assert.equal(await disk.readFile(path.join(workspace, 'obsolete.txt'), 'utf8'), 'concurrent deletion conflict')
-  assert.equal(JSON.stringify(events), beforeLegacyLog)
   // The combined operation uses the installed official surface/price routines
   // and Retrace's existing two-segment writer, after the real fs tool pass.
   policyMode = 'workspace-write'
@@ -366,7 +294,6 @@ try {
   disposeCombined()
   await ctx.fiber.dispose()
   console.log('host-undo smoke: PASS (installed tool registry + observation policy, raw CRLF/BOM, create/delete, reverse patch, unrelated edits preserved, explicit overlap choices, unchanged log)')
-  console.log('host-rollback smoke: PASS (opaque-version CAS, create-if-absent race, guarded native delete, delete conflict, read-only policy)')
   console.log('host-combined smoke: PASS (installed surface/price + tool pipeline, file patch before dialogue cut, original input returned, append-only log)')
 } finally {
   fs.closeSync(fd)

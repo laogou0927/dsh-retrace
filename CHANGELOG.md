@@ -1,3 +1,29 @@
+### 0.5.6(2026-09-30 · 清理：删除被 checkpoints 取代的旧回退执行器)
+
+- **删除死代码**：`lib/rollback.js`（`createRollbackExecutor`）自 0.5.5 被 `lib/checkpoints.js`
+  取代后已无任何 `lib/` 引用，本版连同 `test/rollback.test.js` 一并删除。
+- **冒烟脚本同步**：`scripts/smoke-edit-undo-host.mjs` 切除驱动旧执行器的整段
+  （opaque-version CAS、create-if-absent 竞态、`withLock` 守卫删除、删除冲突、只读策略），
+  共 **−73 行**（1 行 import + 72 行块 + 1 行 PASS 日志）。该层的**对应行为**已由
+  `test/checkpoints.test.js` 的 14 条用例覆盖（文件前像恢复、新建文件安全删除、
+  预览后变更拒绝、失败如实记录等），但**真实 fs provider 级的冒烟覆盖随之消失**；
+  若需补回，应把该段改指 `checkpoints.execute`（尚未做）。
+- **契约注解改指**：`scripts/check-host-contract.mjs` 的 16 处 `usedBy: 'lib/rollback.js:NN'`
+  **没有删空**，而是先核实那批宿主服务**仍在使用**（改由 `checkpoints.js` / `edit-undo.js` /
+  `git-adapter.js` 使用）后按实际调用点改指：
+  `fs.resolve` → `lib/checkpoints.js:43,143,181`；`fs.contains` → `:49,183`；`fs.stat` → `:53,57`；
+  `fs.writeText` → `:243`；`fs.withLock` → `:235`；`fs.processPath` → `:238`；
+  `fs.checkedTarget` → `:237`；`sandboxPolicy.resolve` → `:232`；`sessions.flush` → `:269`；
+  `sessions.get` → `:32,46`；`foldSurface.projections` → `lib/checkpoint-replay.js:8`；
+  `subprocess.spawn` 只保留 `lib/git-adapter.js:35`。
+- **注释同步**：`lib/adapter/dsh.js` 里「三个写入入口」的清单由 `lib/rollback.js` 改为
+  `lib/checkpoints.js`。
+- **刻意保留不动**：`lib/http.js` 的旧 `/rollback` 与 `/rollback/preview` **路由名**仍然保留
+  （客户端仍按这两个名字调用，服务端现指向 `checkpoints`），
+  因此 `test/op-channel-parity.test.js` 对它们的断言不变。
+- **验证**：全仓引用清零（除历史 CHANGELOG）；改动文件 `node --check` 通过；
+  宿主契约闸门 **101 ok / 0 failed** 不受影响。
+
 ### 0.5.5(2026-09-30 · 读档点：恢复操作前的内容（checkpoints 取代旧回退执行器）)
 
 - **读档点：恢复操作前的内容（新）**：新增 `lib/checkpoints.js` / `checkpoint-store.js` /

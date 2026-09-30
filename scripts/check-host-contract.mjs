@@ -314,24 +314,24 @@ const CHECKS = [
   { kind: 'present', id: 'session.isOwnSeq', file: SESSION, re: /^\s+isOwnSeq\(seq\)\s*\{/m, what: 'Session.isOwnSeq(seq)', usedBy: '备查' },
   { kind: 'present', id: 'session.id', file: SESSION, re: /get id\(\)\s*\{/, what: 'Session.id getter', usedBy: 'lib/index.js, lib/watchdog.js, lib/versioning.js, lib/prewrite-guard.js' },
   { kind: 'present', id: 'session.seq', file: SESSION, re: /get seq\(\)\s*\{/, what: 'Session.seq getter', usedBy: 'lib/host-compat.js 语义基准(seq 索引)' },
-  { kind: 'present', id: 'session.header', file: SESSION, re: /^\s+header;/m, what: 'Session.header field', usedBy: 'lib/rollback.js:80 (header.cwd), lib/index.js, lib/versioning.js' },
-  { kind: 'present', id: 'session.header.cwd', file: SESSION, re: /cwd: meta\.cwd/, what: 'session.header.cwd written into the header at construction', usedBy: 'lib/rollback.js:81, lib/index.js:311,405, lib/versioning.js:81,124,372,397' },
+  { kind: 'present', id: 'session.header', file: SESSION, re: /^\s+header;/m, what: 'Session.header field', usedBy: 'lib/checkpoints.js (header.cwd), lib/index.js, lib/versioning.js' },
+  { kind: 'present', id: 'session.header.cwd', file: SESSION, re: /cwd: meta\.cwd/, what: 'session.header.cwd written into the header at construction', usedBy: 'lib/checkpoints.js:32,46, lib/index.js:311,405, lib/versioning.js:81,124,372,397' },
   // runtime read of the same member (host fork path) — same shape the plugin uses
   // (`session.header?.cwd`). Kept separate so the header-construction assertion
   // cannot be satisfied by the input validator alone (review-independent-2 §2.2(c)).
-  { kind: 'present', id: 'session.header.cwd.read', file: SESSION, re: /liveSource\.header\.cwd/, what: 'runtime read of session.header.cwd', usedBy: 'lib/rollback.js:81, lib/index.js:311,405, lib/versioning.js:81,124,372,397' },
+  { kind: 'present', id: 'session.header.cwd.read', file: SESSION, re: /liveSource\.header\.cwd/, what: 'runtime read of session.header.cwd', usedBy: 'lib/checkpoints.js:32,46, lib/index.js:311,405, lib/versioning.js:81,124,372,397' },
   { kind: 'present', id: 'session.append', file: SESSION, re: /^\s+append\(type, data/m, what: 'Session.append(type, data, ...)', usedBy: 'lib/adapter/dsh-writer.js, lib/index.js:327' },
   // reverse: Session has no `sessionId` — the plugin's `?? session.sessionId` fallback
   // (lib/index.js:387) is a dead branch for a measured host.
   { kind: 'absent', id: 'session.sessionId (never existed)', file: SESSION, scope: SESSION_CLASS, member: 'sessionId', what: 'Session.sessionId must NOT exist', usedBy: 'lib/index.js:387 dead fallback (id is the only id)', hint: '若宿主新增 sessionId,核实语义再迁移;不要把它当 id 的别名' },
   // ── session.surface (was the "silent degradation" suspect; confirmed present) ──
-  { kind: 'present', id: 'session.surface', file: SESSION, re: /get surface\(\)\s*\{/, what: 'Session.surface getter', usedBy: 'lib/host-core.js, lib/rollback.js:92' },
+  { kind: 'present', id: 'session.surface', file: SESSION, re: /get surface\(\)\s*\{/, what: 'Session.surface getter', usedBy: 'lib/host-core.js' },
   { kind: 'present', id: 'session.surface.nodes', file: SESSION, re: /get nodes\(\)\s*\{/, what: 'SurfaceManager.nodes getter (number[])', usedBy: 'lib/host-core.js:249,331,545,674; lib/prewrite-guard.js:106' },
 
   // ── sessions service (SessionStore) ────────────────────────────────────────
-  { kind: 'present', id: 'sessions.get', file: SESSION, re: /^\s+get\(id\)\s*\{/m, what: 'SessionStore.get(id)', usedBy: 'lib/host-core.js:180, lib/rollback.js:61, lib/versioning.js, lib/watchdog.js' },
+  { kind: 'present', id: 'sessions.get', file: SESSION, re: /^\s+get\(id\)\s*\{/m, what: 'SessionStore.get(id)', usedBy: 'lib/host-core.js:180, lib/checkpoints.js:32,46, lib/versioning.js, lib/watchdog.js' },
   { kind: 'present', id: 'sessions.list', file: SESSION, re: /^\s+list\(\)\s*\{/m, what: 'SessionStore.list() → Session[]', usedBy: 'lib/host-compat.js:sessionIds (close-guard / interrupt-guard 枚举)' },
-  { kind: 'present', id: 'sessions.flush', file: SESSION, re: /async flush\(session\)\s*\{/, what: 'SessionStore.flush(session)', usedBy: 'lib/host-core.js:412, lib/rollback.js:283' },
+  { kind: 'present', id: 'sessions.flush', file: SESSION, re: /async flush\(session\)\s*\{/, what: 'SessionStore.flush(session)', usedBy: 'lib/host-core.js:412, lib/checkpoints.js:269' },
   // reverse: measured hosts (0.1.0-rc.7 and 0.1.5-rc.1) have no values()/keys().
   // The plugin keeps them as DEFENSIVE old-host fallbacks; these assertions record
   // that neither is the contract of a measured host (review A3/A4/LOW-2/LOW-3).
@@ -386,9 +386,9 @@ const CHECKS = [
   { kind: 'present', id: 'tokenMeter.estimateMessage', file: TOKEN_METER, re: /^\s+estimateMessage\(message\)/m, what: 'tokenMeter.estimateMessage(message)', usedBy: 'lib/adapter/dsh-writer.js:priceByNode' },
   { kind: 'present', id: 'sessionTitle.rename', file: SESSION_TITLE, re: /^\s+rename\(session, title\)/m, what: 'sessionTitle.rename(session, title)', usedBy: 'lib/index.js:325' },
   { kind: 'present', id: 'webServer.register', file: WEB_SERVER, re: /^\s+register\(route\)/m, what: 'webServer.register(route)', usedBy: 'lib/index.js:269' },
-  { kind: 'present', id: 'fs.resolve', file: FS_LOCAL, re: /^\s+async resolve\(path/m, what: 'fs.resolve(path, opts)', usedBy: 'lib/rollback.js, lib/versioning.js, lib/git-adapter.js' },
-  { kind: 'present', id: 'fs.contains', file: FS_LOCAL, re: /^\s+contains\(parent, child\)/m, what: 'fs.contains(parent, child)', usedBy: 'lib/rollback.js:109, lib/versioning.js:86' },
-  { kind: 'present', id: 'fs.stat', file: FS_LOCAL, re: /^\s+async stat\(target/m, what: 'fs.stat(target, signal)', usedBy: 'lib/rollback.js:192' },
+  { kind: 'present', id: 'fs.resolve', file: FS_LOCAL, re: /^\s+async resolve\(path/m, what: 'fs.resolve(path, opts)', usedBy: 'lib/checkpoints.js:43,143,181, lib/versioning.js, lib/git-adapter.js' },
+  { kind: 'present', id: 'fs.contains', file: FS_LOCAL, re: /^\s+contains\(parent, child\)/m, what: 'fs.contains(parent, child)', usedBy: 'lib/checkpoints.js:49,183, lib/versioning.js:86' },
+  { kind: 'present', id: 'fs.stat', file: FS_LOCAL, re: /^\s+async stat\(target/m, what: 'fs.stat(target, signal)', usedBy: 'lib/checkpoints.js:53,57' },
   { kind: 'present', id: 'fs.readBytes', file: FS_LOCAL, re: /^\s+async readBytes\(target/m, what: 'fs.readBytes(target, signal, maxBytes)', usedBy: 'lib/versioning.js:87' },
   { kind: 'present', id: 'fs.listDir', file: FS_LOCAL, re: /async listDir\(target, signal\)/, what: 'provider directory enumeration for PowerShell before/after images', usedBy: 'lib/edit-undo-pwsh.js: scanPowerShellWorkspace' },
   { kind: 'present', id: 'fs.lstat', file: FS_LOCAL, re: /async lstat\(path, opts, signal\)/, what: 'lexical no-follow stat for workspace scanning', usedBy: 'lib/edit-undo-pwsh.js: scanPowerShellWorkspace' },
@@ -398,19 +398,19 @@ const CHECKS = [
   { kind: 'present', id: 'jobs.events-subscribe', file: JOBS_LOCAL, re: /get events\(\)[\s\S]*?subscribe: \(filter, listener\) => this.hub.subscribe/, what: 'job event subscription through the accessing context', usedBy: 'lib/edit-undo-pwsh.js: begin' },
   { kind: 'present', id: 'jobs.settled-event', file: JOBS_LOCAL, re: /type: "settled",\s*job: this.view\(job\),\s*cause,/, what: 'managed job settlement event with snapshot and cause', usedBy: 'lib/edit-undo-pwsh.js: begin' },
   // 5-arg form the plugin calls: (target, content, expected, signal, sandboxPolicy)
-  { kind: 'present', id: 'fs.writeText', file: FS_SANDBOX, re: /async writeText\(target, content, expected, signal, sandboxPolicy\)/, what: 'fs-sandbox writeText(..., sandboxPolicy)', usedBy: 'lib/rollback.js:196, lib/git-adapter.js:61' },
-  { kind: 'present', id: 'fs.withLock', file: FS_LOCAL, re: /async withLock\(targetKey, op\)/, what: 'local per-target mutation lock', usedBy: 'lib/edit-undo.js: removeCreated; lib/rollback.js: removeOne' },
-  { kind: 'present', id: 'fs.processPath', file: FS_LOCAL, re: /processPath\(target\)/, what: 'canonical local process path', usedBy: 'lib/edit-undo.js: removeCreated; lib/rollback.js: removeOne' },
-  { kind: 'present', id: 'fs.checkedTarget', file: FS_SANDBOX, re: /async checkedTarget\(target, sandboxPolicy\)/, what: 'sandbox identity and policy check', usedBy: 'lib/edit-undo.js: removeCreated; lib/rollback.js: removeOne' },
+  { kind: 'present', id: 'fs.writeText', file: FS_SANDBOX, re: /async writeText\(target, content, expected, signal, sandboxPolicy\)/, what: 'fs-sandbox writeText(..., sandboxPolicy)', usedBy: 'lib/checkpoints.js:243, lib/git-adapter.js:61' },
+  { kind: 'present', id: 'fs.withLock', file: FS_LOCAL, re: /async withLock\(targetKey, op\)/, what: 'local per-target mutation lock', usedBy: 'lib/checkpoints.js:235; lib/edit-undo.js: removeCreated' },
+  { kind: 'present', id: 'fs.processPath', file: FS_LOCAL, re: /processPath\(target\)/, what: 'canonical local process path', usedBy: 'lib/checkpoints.js:238; lib/edit-undo.js: removeCreated' },
+  { kind: 'present', id: 'fs.checkedTarget', file: FS_SANDBOX, re: /async checkedTarget\(target, sandboxPolicy\)/, what: 'sandbox identity and policy check', usedBy: 'lib/checkpoints.js:237; lib/edit-undo.js: removeCreated' },
   { kind: 'present', id: 'tools.execute-waterfall', file: TOOLS, re: /waterfall\(carrier, "tools\/execute", mutableExec/, what: 'around-dispatch tool middleware', usedBy: 'lib/edit-undo.js: register' },
   { kind: 'present', id: 'fs.write-intent', file: TOOL_FS, re: /waterfall\("fs\/write-intent", target, exec/, what: 'write intent middleware with execution identity', usedBy: 'lib/edit-undo.js: captureIntent' },
   { kind: 'present', id: 'fs.edit-intent', file: TOOL_FS, re: /waterfall\("fs\/edit-intent", target, exec/, what: 'edit intent middleware with execution identity', usedBy: 'lib/edit-undo.js: captureIntent' },
   { kind: 'present', id: 'fs.intent-terminal-policy', file: FS_OBSERVATION_POLICY, re: /ctx\.on\("fs\/write-intent", \(target, actor\) => Promise\.resolve\(\)\.then\(\(\) => gate\.writeIntent\(target, actor\)\)\)/, what: 'terminal observation policy requires an outer capture listener', usedBy: 'lib/edit-undo.js: register (prepend)' },
   { kind: 'present', id: 'fs.edit-intent-object', file: FS_OBSERVATION_POLICY, re: /return \{\s*version: prior\.version\s*\}/, what: 'edit intent carries its opaque version in an object', usedBy: 'lib/edit-undo.js: captureIntent' },
   { kind: 'present', id: 'fs.observed', file: TOOL_FS, re: /emit\("fs\/observed", target, \{\s*kind: "present",\s*version: outcome.version\s*\}, exec\)/, what: 'post-mutation opaque version with execution identity', usedBy: 'lib/edit-undo.js: record' },
-  { kind: 'present', id: 'subprocess.spawn', file: SUBPROCESS_LOCAL, re: /^\s+spawn\(spec\)/m, what: 'subprocess.spawn(spec)', usedBy: 'lib/rollback.js:171, lib/git-adapter.js:35' },
+  { kind: 'present', id: 'subprocess.spawn', file: SUBPROCESS_LOCAL, re: /^\s+spawn\(spec\)/m, what: 'subprocess.spawn(spec)', usedBy: 'lib/git-adapter.js:35' },
   { kind: 'present', id: 'subprocess.resolveExecutable', file: SUBPROCESS_LOCAL, re: /^\s+async resolveExecutable\(command/m, what: 'subprocess.resolveExecutable(command)', usedBy: 'lib/git-adapter.js:34' },
-  { kind: 'present', id: 'sandboxPolicy.resolve', file: SANDBOX_POLICY, re: /^\s+resolve\(request/m, what: 'sandboxPolicy.resolve(request)', usedBy: 'lib/rollback.js:195' },
+  { kind: 'present', id: 'sandboxPolicy.resolve', file: SANDBOX_POLICY, re: /^\s+resolve\(request/m, what: 'sandboxPolicy.resolve(request)', usedBy: 'lib/checkpoints.js:232' },
   { kind: 'present', id: 'jobs.list', file: JOBS_LOCAL, re: /^\s+list\(caller\)/m, what: 'jobs.list(caller)', usedBy: 'lib/close-guard.js:77-79' },
   { kind: 'present', id: 'sessionProjections.register', file: SESSION_PROJECTION, re: /^\s+register\(definition\)/m, what: 'sessionProjections.register(definition)', usedBy: 'lib/versioning.js:229,231' },
   { kind: 'present', id: 'sessionProjections.onChanged', file: SESSION_PROJECTION, re: /^\s+onChanged\(listener\)/m, what: 'sessionProjections.onChanged(listener)', usedBy: 'lib/versioning.js:233' },
@@ -466,9 +466,9 @@ const CHECKS = [
   // log WITHOUT the live definitions throws → the plugin's span path reports
   // replay-failed (an internal error) for every recall/edit/rollback on a session
   // that ever offloaded an image. These four pins keep the supply path alive.
-  { kind: 'present', id: 'foldSurface.projections', file: SESSION, re: /function foldSurface\(events, projections = \[\]\)/, what: 'foldSurface(events, projections = []) — accepts message-projection definitions', usedBy: 'lib/adapter/dsh.js:208, lib/rollback.js:97' },
+  { kind: 'present', id: 'foldSurface.projections', file: SESSION, re: /function foldSurface\(events, projections = \[\]\)/, what: 'foldSurface(events, projections = []) — accepts message-projection definitions', usedBy: 'lib/adapter/dsh.js:208, lib/checkpoint-replay.js:8' },
   { kind: 'present', id: 'MESSAGE_PROJECTION_EVENT_TYPES', file: SESSION, re: /MESSAGE_PROJECTION_EVENT_TYPES = new Set\(\["image\/offload"\]\)/, what: 'MESSAGE_PROJECTION_EVENT_TYPES = {image/offload} — an interpreter is mandatory', usedBy: 'lib/adapter/dsh.js messageProjectionsOf (the reason definitions must be supplied)', hint: '若该集合新增事件类型,核实其解释器是否也需随折叠一起带上' },
-  { kind: 'present', id: 'sessions.messageProjections', file: SESSION, re: /get messageProjections\(\)\s*\{/, what: 'SessionStore.messageProjections — the live borrowed definitions', usedBy: 'lib/adapter/dsh.js computeSpan(opts.projections), lib/rollback.js contextDiff, lib/index.js:371, lib/http.js:420' },
+  { kind: 'present', id: 'sessions.messageProjections', file: SESSION, re: /get messageProjections\(\)\s*\{/, what: 'SessionStore.messageProjections — the live borrowed definitions', usedBy: 'lib/adapter/dsh.js computeSpan(opts.projections), lib/index.js:371, lib/http.js:420' },
   { kind: 'present', id: 'sessions.registerMessageProjection', file: SESSION, re: /^\s+registerMessageProjection\(projection\)\s*\{/m, what: 'SessionStore.registerMessageProjection(projection) — how the owning plugin publishes its interpreter', usedBy: '宿主插件 dsh-compaction-image-offload:140 注册 image/offload 解释器' },
 
   // ── reverse assertions: removed members must stay removed ─────────────────
@@ -496,7 +496,7 @@ const CHECKS = [
   // Matches a bare identifier path argument only (`foldSurface(events)`), so
   // prose such as `foldSurface(events, projections = [])` and `foldSurface(...)`
   // in comments does not trip it.
-  { kind: 'absent', id: 'plugin.foldSurface-needs-projections', plugin: { dir: 'lib', skip: [], re: /\bfoldSurface\s*\(\s*[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\)/ }, what: 'no single-argument foldSurface(...) call in lib/', usedBy: 'lib/adapter/dsh.js:208, lib/rollback.js:97', hint: '0.2.0 起折叠必须带消息投影定义(见 lib/adapter/dsh.js messageProjectionsOf);否则含 image/offload 的日志抛错 → replay-failed' },
+  { kind: 'absent', id: 'plugin.foldSurface-needs-projections', plugin: { dir: 'lib', skip: [], re: /\bfoldSurface\s*\(\s*[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\)/ }, what: 'no single-argument foldSurface(...) call in lib/', usedBy: 'lib/adapter/dsh.js:208, lib/checkpoint-replay.js:8', hint: '0.2.0 起折叠必须带消息投影定义(见 lib/adapter/dsh.js messageProjectionsOf);否则含 image/offload 的日志抛错 → replay-failed' },
 ]
 
 // ---------------------------------------------------------------------------
