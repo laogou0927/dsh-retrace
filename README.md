@@ -39,6 +39,8 @@ DeepSeek Harness.
 
 ## Pause before requests
 
+The checkpoint page also shows committed steering messages in an expandable history. Continuing with an empty draft adds no history entry. Its **Undo file edits** entry lists captured edits by turn and opens the existing guarded preview and conflict dialog. Undo outcomes, including partial failures and kept content, are saved from this version onward; earlier captured edits remain available to preview and undo.
+
 The [dsh-pause](https://github.com/better-er/dsh-pause) behavior is integrated; no separate pause plugin is needed.
 The small **⏸** control at the right of the composer toolbar is off by default and enables pausing for that conversation only.
 The second and subsequent model requests within a turn wait before being sent, including tool continuations and mid-turn steering.

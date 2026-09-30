@@ -134,6 +134,37 @@ async function fixture({ terminalPolicy = false, rejectEdit = false, conversatio
 }
 
 describe('PowerShell workspace capture', () => {
+  it('offers old captures in the timeline, persists exact outcomes and exposes no file contents', async () => {
+    const f = await fixture()
+    await disk.writeFile(join(f.workspace, 'a'), 'private-before')
+    await f.tool('a', 'private-after')
+    const before = await f.undo.timeline('s1')
+    expect(before.turns).toMatchObject([{ turn: 1, files: [{ status: 'recorded' }] }])
+    expect(before.fileUndos).toEqual([])
+    expect(JSON.stringify(before)).not.toMatch(/private-before|private-after/)
+    const p = await f.preview()
+    expect((await f.undo.timeline('s1')).fileUndos).toEqual([])
+    await f.apply(p.value.ticket)
+    const after = await f.undo.timeline('s1')
+    expect(after.turns[0].files[0].status).toBe('restored')
+    expect(after.fileUndos).toMatchObject([{ kind: 'file-undo', turn: 1, complete: true, results: [{ status: 'restored' }] }])
+    const restarted = createEditUndo(f.ctx, { root: join(f.root, 'journal') })
+    expect(await restarted.timeline('s1')).toEqual(after)
+    const again = await f.preview()
+    await f.apply(again.value.ticket)
+    expect((await f.undo.timeline('s1')).fileUndos).toHaveLength(1)
+    await f.apply('expired')
+    expect((await f.undo.timeline('s1')).fileUndos).toHaveLength(1)
+  })
+  it('bounds durable file undo history without discarding current captured edits', async () => {
+    const f = await fixture(), store = createEditUndoStore(join(f.root, 'journal'))
+    await f.tool('a', 'a')
+    await store.update('s1', (data) => { data.activities = Array.from({ length: 205 }, (_, i) => ({ id: String(i), results: [], complete: true })) })
+    const history = await f.undo.timeline('s1')
+    expect(history.fileUndos).toHaveLength(200)
+    expect(history.fileUndos[0].id).toBe('5')
+    expect(history.turns).toHaveLength(1)
+  })
   it('records modification, creation, deletion and rename without prior read calls; raw bytes return', async () => {
     const f = await fixture(), path = (name) => join(f.workspace, name)
     const raw = '\uFEFFfirst\r\nsecond\r\n'
@@ -395,6 +426,7 @@ describe('per-turn file undo', () => {
     const result = await f.apply(p.value.ticket)
     expect(result.value.complete).toBe(false)
     expect(result.value.results.map((x) => x.status)).toEqual(['restored', 'failed'])
+    expect((await f.undo.timeline('s1')).fileUndos).toMatchObject([{ complete: false, results: [{ status: 'restored' }, { status: 'failed', reason: 'FS_STALE_VERSION' }] }])
     expect(await disk.readFile(join(f.workspace, 'a'), 'utf8')).toBe('a-before')
     expect(await disk.readFile(join(f.workspace, 'b'), 'utf8')).toBe('competing edit')
   })

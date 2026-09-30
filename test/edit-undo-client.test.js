@@ -32,6 +32,19 @@ beforeEach(() => { hooks.values = []; hooks.index = 0; __setMessageEditorWire(nu
 afterEach(() => { vi.unstubAllGlobals(); __setMessageEditorWire(null) })
 
 describe('file undo preview controls', () => {
+  it('opens a checkpoint-page turn directly and refreshes its history after applying', async () => {
+    const onApplied = vi.fn(), props = { turn: 0, buttonLabel: '撤销文件编辑', onApplied }
+    const fetch = vi.fn().mockResolvedValueOnce(response({ ticket: 't', files: [row('a', 'ready')], busy: false }))
+      .mockResolvedValueOnce(response({ complete: true, results: [{ id: 'a', status: 'restored' }] }))
+      .mockResolvedValueOnce(response({ ticket: 'done', files: [row('a', 'restored')], busy: false }))
+    vi.stubGlobal('fetch', fetch)
+    expect(button(render(props), 'open').props.className).toBe('dsh-rt-chip')
+    await button(render(props), 'open').props.onClick()
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({ sessionId: 's', turn: 0 })
+    await button(render(props), 'all').props.onClick()
+    expect(onApplied).toHaveBeenCalledOnce()
+    expect(JSON.parse(fetch.mock.calls[2][1].body)).toEqual({ sessionId: 's', turn: 0 })
+  })
   it('explains incomplete PowerShell coverage and blocks all-file or combined undo while allowing a verified file', async () => {
     const value = { ticket: 't', files: [row('a', 'ready')], busy: false, incomplete: true, warnings: ['capture-limit'] }
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response(value)))

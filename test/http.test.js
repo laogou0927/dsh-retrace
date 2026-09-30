@@ -699,6 +699,24 @@ describe('关闭守卫 V2 runningState HTTP 路由(client 轮询同步读源)', 
 // GET /summaries — the plugin's own boundary artifact (excerpts + opt-in summary)
 // ---------------------------------------------------------------------------
 
+describe('GET /activities', () => {
+  it('returns session-scoped activity metadata without touching the replacement projection', async () => {
+    const seam = makeSeam(), activities = vi.fn(async (sessionId) => ({ sessionId, turns: [{ turn: 0 }], pauses: [{ seq: 5, text: 'steering' }], fileUndos: [] }))
+    const handler = createRetraceHttpHandler({}, { sessions: new Map(), agents: new Map(), seam, activities })
+    const body = JSON.parse((await get(handler, `${ROUTE_PREFIX}/activities?sessionId=s1`)).body)
+    expect(body).toMatchObject({ ok: true, value: { sessionId: 's1', pauses: [{ text: 'steering' }], turns: [{ turn: 0 }] } })
+    expect(activities).toHaveBeenCalledWith('s1')
+    expect(seam.snapshot).not.toHaveBeenCalled()
+  })
+  it('rejects a missing session id and propagates session read failures', async () => {
+    const activities = vi.fn(async () => { throw Object.assign(new Error('missing'), { code: 'session-not-found' }) })
+    const handler = createRetraceHttpHandler({}, { sessions: new Map(), agents: new Map(), seam: makeSeam(), activities })
+    expect(JSON.parse((await get(handler, `${ROUTE_PREFIX}/activities`)).body).ok).toBe(false)
+    expect(activities).not.toHaveBeenCalled()
+    expect(JSON.parse((await get(handler, `${ROUTE_PREFIX}/activities?sessionId=missing`)).body).error.code).toBe('session-not-found')
+  })
+})
+
 describe('GET /summaries', () => {
   const makeSummarySeam = (root, { enabled = true } = {}) => {
     pretendCalls(0)
