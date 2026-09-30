@@ -37,6 +37,21 @@ DeepSeek Harness.
 > See [Compatibility & upgrade notes](#-compatibility--upgrade-notes) for what
 > 0.2.0 broke and the `patches/` dependency patch this fork carries.
 
+## Pause before requests
+
+The [dsh-pause](https://github.com/better-er/dsh-pause) behavior is integrated; no separate pause plugin is needed.
+The small **⏸** control at the right of the composer toolbar is off by default and enables pausing for that conversation only.
+The second and subsequent model requests within a turn wait before being sent, including tool continuations and mid-turn steering.
+The first request runs normally. In-flight requests and tools finish normally, and the composer stays editable.
+
+While paused, press bare Enter or click **Continue**: an empty draft resumes without adding a message;
+plain text joins the immediately following request as steering and is cleared after successful release.
+Modified Enter and IME confirmation retain their normal behavior.
+Disabling pause releases the current wait; stopping the task cancels it. Host restart resets the switches to off.
+Attachments, structured references and command mode must be removed or exited before text release.
+Failed or stale releases, and drafts edited during release, keep the draft intact.
+Both published and dynamic entries support this feature. Avoid enabling the standalone dsh-pause plugin at the same time.
+
 ## Undo file edits in a turn
 
 Click **⟲** in an assistant reply's action row to preview that turn's file edits,

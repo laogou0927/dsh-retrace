@@ -80,7 +80,7 @@ export const HTTP_ONLY_BY_DESIGN = {
 }
 
 /** **必须两条通道都在**的 op 组：短码这一族（本次回归的教训直接钉在这里）。 */
-export const BOTH_CHANNELS_REQUIRED = ['sessionBadge', 'setBadgeTitle', 'initBadgeTitles', 'badgeMap']
+export const BOTH_CHANNELS_REQUIRED = ['sessionBadge', 'setBadgeTitle', 'initBadgeTitles', 'badgeMap', 'pauseStatus', 'pauseSetEnabled', 'pauseRelease']
 
 /** 纯函数：HTTP 集合里缺哪些客户端 op。 */
 export function missingOnHttp(clientOps, httpOps) {
@@ -91,7 +91,7 @@ export function missingEverywhere(clientOps, harnessOps, httpOnly = HTTP_ONLY_BY
   return clientOps.filter((op) => !harnessOps.includes(op) && !(op in httpOnly))
 }
 
-const clientSrc = read('lib/client.js')
+const clientSrc = read('lib/client.js') + read('lib/pause-client.js').replace(/\b(?:call|mutate)\(/g, 'callOp(')
 const indexSrc = read('lib/index.js')
 const httpSrc = read('lib/http.js')
 const hostCoreSrc = read('lib/host-core.js')

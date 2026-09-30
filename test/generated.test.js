@@ -24,7 +24,7 @@ function loadDynamicEntry(file, globals) {
 }
 
 describe('generated dynamic-host', () => {
-  it('registers the three harness handlers and runs a recall end-to-end', async () => {
+  it('registers editor and pause handlers and runs a recall end-to-end', async () => {
     const session = makeSession().seed(
       headerEvent(),
       userMessage('u1', 'hello world'),
@@ -55,6 +55,9 @@ describe('generated dynamic-host', () => {
 
     expect(Object.keys(handled).sort()).toEqual([
       'retrace.editAndResend',
+      'retrace.pauseRelease',
+      'retrace.pauseSetEnabled',
+      'retrace.pauseStatus',
       'retrace.recall',
       'retrace.regenerate',
     ])

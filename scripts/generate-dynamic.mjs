@@ -48,6 +48,7 @@ const indent = (text, spaces) =>
   const spanSemanticsSrc = read('lib/span-semantics.js')
   const markerCarrierSrc = read('lib/marker-carrier.js')
   const contractSrc = read('lib/adapter/contract.js')
+  const pauseSrc = read('lib/pause.js')
   // 这些文件都是纯 ESM(host-core/span-semantics/host-compat 零平台 import;contract 只引
   // span-semantics;dsh-writer 只引 host-core 与 contract 的符号)——strip export 与
   // import,声明落进动态 apply 作用域(inline 顺序保证符号先声明后使用)。
@@ -58,6 +59,7 @@ const indent = (text, spaces) =>
   const inlineContract = strip(contractSrc)
   const inlineHost = strip(hostCore)
   const inlineWriter = strip(writerSrc)
+  const inlinePause = strip(pauseSrc)
   const dynamicHost = `/**
  * GENERATED FILE — do not edit by hand.
  * Source of truth: lib/host-core.js + lib/adapter/dsh-writer.js + the wrapper
@@ -74,6 +76,7 @@ ${indent(inlineMarkerCarrier, 4)}
 ${indent(inlineContract, 4)}
 ${indent(inlineHost, 4)}
 ${indent(inlineWriter, 4)}
+${indent(inlinePause, 4)}
     // 遮蔽写入器（DSH 两段结构翻译）。动态路径无 prewrite guard——
     // 正式装配在 lib/index.js 注入 validateMarker。
     // 官方 token-meter 服务面同样**注入**（生成件里不能 import 官方包）：第 1 段的
@@ -83,10 +86,16 @@ ${indent(inlineWriter, 4)}
       log,
     })
     const api = createEditorApi(ctx, sessions, agents, log, { writeMarker: markerWriter.writeMarker })
+    const pause = createPauseController(ctx)
+    pause.register()
     const disposers = [
       harness.handle('retrace.recall', (args) => api.recall(args)),
       harness.handle('retrace.editAndResend', (args) => api.editAndResend(args)),
       harness.handle('retrace.regenerate', (args) => api.regenerate(args)),
+      harness.handle('retrace.pauseStatus', (args) => pause.ops.pauseStatus(args)),
+      harness.handle('retrace.pauseSetEnabled', (args) => pause.ops.pauseSetEnabled(args)),
+      harness.handle('retrace.pauseRelease', (args) => pause.ops.pauseRelease(args)),
+      () => pause.dispose(),
     ]
     ctx.effect(() => () => {
       for (const dispose of disposers) dispose()

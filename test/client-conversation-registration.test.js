@@ -88,8 +88,8 @@ describe('会话 Definition 注册入口（2026-09-14 事故 2 回归）', () =>
         inject: ['slots', 'locale'],
         definitions: 4,
         source: 'uiConversation.events',
-        seats: 6,
-        slots: 6,
+        seats: 7,
+        slots: 7,
       },
     })
   })
